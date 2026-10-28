@@ -163,7 +163,7 @@ impl SettingsStore {
         // release：探 Resource 目录（打包时 dist 资源打进安装包）
         let manifest_exists = if cfg!(debug_assertions) {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../public/assets/pets/netease/manifest.json")
+                .join("../public/assets/pets/netease-cockatiel/manifest.json")
                 .exists()
         } else {
             app.path()

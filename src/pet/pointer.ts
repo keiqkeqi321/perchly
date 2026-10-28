@@ -54,6 +54,10 @@ export interface PointerHandlers {
   onClick(): void;
   /** 双击 → 隐藏到托盘 */
   onDoubleClick(): void;
+  /** 拖拽判定成立（位移过阈值，startDragging 前） */
+  onDragStart?(): void;
+  /** 系统拖拽结束（savePosition 之后） */
+  onDragEnd?(): void;
 }
 
 /** 穿透子系统当前模式 */
@@ -226,9 +230,10 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
       if (!pressed || dragged) return;
       if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
         dragged = true;
+        handlers.onDragStart?.();
         win
           .startDragging()
-          .then(() => savePositionAfterDrag())
+          .then(() => { savePositionAfterDrag(); handlers.onDragEnd?.(); })
           .catch((err) => console.warn("[pet] startDragging 失败:", err));
       }
     });

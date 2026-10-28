@@ -314,3 +314,14 @@ video.netease-raw {
 #pet-video-hit:active {
   cursor: grabbing;
 }
+
+/* 宠物包引擎：双层舞台（bg 在下，body 在上，都在 .netease-stage 内） */
+.petpack-body,
+.petpack-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}

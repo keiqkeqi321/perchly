@@ -1,0 +1,80 @@
+{
+  "id": "netease-cockatiel",
+  "name": "玄凤鹦鹉",
+  "version": 1,
+  "windowSize": 220,
+  "layers": {
+    "body": {
+      "z": 10
+    },
+    "bg": {
+      "z": 5
+    }
+  },
+  "assets": {
+    "idle": [
+      "主体-待机点头.webm",
+      "主体-待机张嘴叫一下.webm",
+      "主体-待机有节奏的叫.webm",
+      "主体-待机动一下羽冠侧头看.webm",
+      "主体-待机左右踱步叫一下.webm"
+    ],
+    "interact": [
+      "主体-交互低趴翅膀后弹起.webm",
+      "主体-交互吓你一下.webm",
+      "主体-交互唱歌.webm",
+      "主体-交互跟随音乐起舞.webm",
+      "主体-交互恐吓.webm"
+    ],
+    "fly": [
+      "主体-拖动飞翔.webm"
+    ]
+  },
+  "backgrounds": {
+    "heart": "背景-爱心.webm",
+    "notes": "背景-光晕加音符.webm",
+    "aura": "背景-光晕.webm"
+  },
+  "triggerRules": [
+    {
+      "when": "interact:主体-交互恐吓.webm",
+      "bg": "heart",
+      "quotes": [
+        "哼！再戳我就生气啦！",
+        "嘎——！不许再戳了！",
+        "你再戳一下试试？！",
+        "哼哼，人家会害怕的啦……"
+      ]
+    },
+    {
+      "when": "interact:主体-交互唱歌.webm",
+      "bg": "notes",
+      "quotes": [
+        "啦啦啦～♪",
+        "跟着我一起唱！",
+        "今天的歌，送给你～",
+        "♪～♪～♪"
+      ]
+    },
+    {
+      "when": "interact:主体-交互跟随音乐起舞.webm",
+      "bg": "notes",
+      "quotes": [
+        "动次打次～",
+        "音乐一响，谁也拦不住我！",
+        "一起摇摆～",
+        "左三圈右三圈～"
+      ]
+    },
+    {
+      "when": "drag",
+      "bg": "aura",
+      "quotes": []
+    },
+    {
+      "when": "interact:*",
+      "bg": null,
+      "quotes": []
+    }
+  ]
+}

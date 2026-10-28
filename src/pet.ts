@@ -22,7 +22,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CLICK_QUOTES, PARTY_QUOTES, pick } from "./pet/quotes";
-import { NeteasePetPlayer } from "./pet/netease";
+import { PetPackEngine, type PetPack } from "./pet/petpack";
 import { setHitShape } from "./pet/pointer";
 
 /** 连击彩蛋：连续点击次数（超时窗口内） */
@@ -42,10 +42,8 @@ function main(): void {
   const params = new URLSearchParams(location.search);
   const urlSkin = params.get("netease");
   if (urlSkin) {
-    void applySkin("netease", {
-      fixedId: urlSkin !== "random" && urlSkin !== "all" ? urlSkin : undefined,
-      rotate: urlSkin === "all",
-    });
+    // 调试参数：?netease=1 强制宠物包皮肤（不支持单条指定，改用 triggerRules）
+    void applySkin("netease");
   } else {
     // 初始皮肤：读设置，失败走 SVG
     void invoke<{ petSkin?: string }>("get_settings")
@@ -77,8 +75,8 @@ function main(): void {
   let comboTimer = 0;
 
   function handlePetClick(): void {
-    // 视频皮肤：点击 = 换下一条动画 + 气泡（连点彩蛋照旧，且也换动画给反馈）
-    if (currentSkin === "netease") {
+    // 视频皮肤：点击 = 随机交互动作（背景/台词按 triggerRules 绑定）
+    if (currentSkin !== "svg" && packEngine) {
       window.clearTimeout(comboTimer);
       comboTimer = window.setTimeout(() => { combo = 0; }, COMBO_WINDOW_MS);
       combo += 1;
@@ -86,11 +84,12 @@ function main(): void {
         combo = 0;
         window.clearTimeout(comboTimer);
         tricks.showBubble(pick(PARTY_QUOTES), 5000);
-        void nextNeteaseClip(); // 彩蛋也换动画：不换会显得"点击没反应"
+        void packEngine.interact().then((q) => { if (q.length) tricks.showBubble(pick(q)); });
         return;
       }
-      tricks.showBubble(pick(CLICK_QUOTES));
-      void nextNeteaseClip();
+      void packEngine.interact().then((q) => {
+        tricks.showBubble(q.length ? pick(q) : pick(CLICK_QUOTES));
+      });
       return;
     }
 
@@ -138,7 +137,12 @@ function main(): void {
     console.warn("[pet] 事件绑定失败，桌宠将以纯观赏模式运行:", err);
   });
 
-  setupPointer(dom, { onClick: handlePetClick, onDoubleClick: handleDoubleClick }).catch((err) => {
+  setupPointer(dom, {
+    onClick: handlePetClick,
+    onDoubleClick: handleDoubleClick,
+    onDragStart: () => { void packEngine?.dragStart(); },
+    onDragEnd: () => packEngine?.dragEnd(),
+  }).catch((err) => {
     // 交互层挂了（极端情况，如非 Tauri 环境）：挂最简单的原生 click/dblclick 兜底，
     // 至少保留点击反应、彩蛋与双击隐藏，不会变成点不动的白板
     console.warn("[pet] 交互层初始化失败，改用原生点击兜底:", err);
@@ -152,25 +156,20 @@ function main(): void {
 
 /* ================= 皮肤系统（applySkin 统一入口） ================= */
 
-interface ManifestItem { id: string; file: string; width: number; height: number }
-
 /** 当前皮肤（点击行为分流用） */
 let currentSkin = "svg";
 
-/** 当前网易播放器与轮播定时器（切皮肤时销毁） */
-let activePlayer: NeteasePetPlayer | null = null;
-let activeStage: HTMLElement | null = null;
-let rotateTimer = 0;
+/** 宠物包引擎（netease 皮肤时活动） */
+let packEngine: PetPackEngine | null = null;
+let packStage: HTMLElement | null = null;
 let applySeq = 0; // 防竞态：只允许最后一次 applySkin 生效
-let neteaseItems: ManifestItem[] = []; // manifest 缓存（点击换动画用）
-let neteaseIdx = 0; // 当前播放索引
+const DEFAULT_PACK = "netease-cockatiel";
 
 interface SkinOpts {
-  fixedId?: string;
-  rotate?: boolean;
+  pack?: string;
 }
 
-/** 切换桌宠皮肤。svg=自绘；netease=网易云直显。 */
+/** 切换桌宠皮肤。svg=自绘；netease=宠物包双层引擎。 */
 async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
   const seq = ++applySeq;
   const dom = getPetDom();
@@ -178,39 +177,34 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
 
   // —— SVG 皮肤：清掉视频层，恢复 SVG ——
   if (skin === "svg") {
-    disposeNetease(dom);
+    disposePack(dom);
     setHitShape("ellipse");
     dom.videoHit.style.display = "none";
     console.info("[pet] 皮肤: SVG 鹦鹉");
     return;
   }
 
-  // —— 网易皮肤：加载 manifest → 建播放器 ——
+  // —— 宠物包皮肤：读 manifest → 建双层引擎 ——
+  const packId = opts.pack ?? DEFAULT_PACK;
   try {
-    const res = await fetch("/assets/pets/netease/manifest.json");
-    const items: ManifestItem[] = await res.json();
-    if (seq !== applySeq) return; // 已被更新的切换覆盖
-    if (!items.length) throw new Error("manifest 为空");
-    neteaseItems = items;
+    const res = await fetch(`/assets/pets/${packId}/manifest.json`);
+    const pack: PetPack = await res.json();
+    if (seq !== applySeq) return;
+    if (!pack.assets.idle.length) throw new Error("宠物包没有待机动画");
 
-    const item = opts.fixedId
-      ? items.find((it) => it.id === opts.fixedId) ?? items[0]
-      : items[Math.floor(Math.random() * items.length)];
-    neteaseIdx = items.indexOf(item);
-
-    disposeNetease(dom); // 先清旧层（含 SVG 隐藏态的复位）
+    disposePack(dom); // 清旧层
 
     const stage = document.createElement("div");
     stage.className = "netease-stage";
     dom.inner.appendChild(stage);
 
-    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`);
-    const ok = await player.attach(stage);
-    if (seq !== applySeq) { player.destroy(); stage.remove(); return; }
-    if (!ok) throw new Error("播放器初始化失败");
+    const engine = new PetPackEngine(pack, stage);
+    const ok = await engine.start();
+    if (seq !== applySeq) { engine.dispose(); stage.remove(); return; }
+    if (!ok) throw new Error("引擎启动失败");
 
-    activePlayer = player;
-    activeStage = stage;
+    packEngine = engine;
+    packStage = stage;
 
     // 视频模式接管：隐藏 SVG 与 Zzz，启用矩形命中层
     dom.svg.style.display = "none";
@@ -218,47 +212,21 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     setHitShape("rect");
     dom.videoHit.style.display = "";
 
-    console.info(`[pet] 皮肤: 网易云直显 ${item.id.slice(0, 8)} (${item.width}x${item.height})`);
-
-    // 轮播：每条循环三遍后换下一条
-    if (opts.rotate) {
-      const idx = items.indexOf(item);
-      rotateTimer = window.setTimeout(() => {
-        void applySkin(skin, { rotate: true, fixedId: items[(idx + 1) % items.length].id });
-      }, (player.durationMs || 4000) * 3);
-    }
+    console.info(`[pet] 皮肤: 宠物包「${pack.name}」(${pack.id}) 待机×${pack.assets.idle.length} 交互×${pack.assets.interact.length}`);
   } catch (err) {
     if (seq === applySeq) {
-      console.warn("[pet] 网易皮肤不可用，回退 SVG:", err);
-      disposeNetease(dom);
+      console.warn("[pet] 宠物包不可用，回退 SVG:", err);
+      disposePack(dom);
     }
   }
 }
 
-/** 点击换动画：播下一条（循环） */
-async function nextNeteaseClip(): Promise<void> {
-  if (!neteaseItems.length || !activePlayer || !activeStage) return;
-  neteaseIdx = (neteaseIdx + 1) % neteaseItems.length;
-  const item = neteaseItems[neteaseIdx];
-  activePlayer.destroy();
-  activePlayer = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`);
-  const ok = await activePlayer.attach(activeStage);
-  if (!ok) {
-    console.warn(`[pet] 动画 ${item.id.slice(0, 8)} 加载失败，回退 SVG`);
-    void applySkin("svg");
-    return;
-  }
-  console.info(`[pet] 换动画: ${item.id.slice(0, 8)}`);
-}
-
-/** 清理网易视频层并恢复 SVG 可见 */
-function disposeNetease(dom: ReturnType<typeof getPetDom>): void {
-  window.clearTimeout(rotateTimer);
-  rotateTimer = 0;
-  activePlayer?.destroy();
-  activePlayer = null;
-  activeStage?.remove();
-  activeStage = null;
+/** 清理宠物包引擎并恢复 SVG 可见 */
+function disposePack(dom: ReturnType<typeof getPetDom>): void {
+  packEngine?.dispose();
+  packEngine = null;
+  packStage?.remove();
+  packStage = null;
   dom.svg.style.display = "";
   document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = ""));
 }
