@@ -12,7 +12,8 @@ set -euo pipefail
 # 定位项目根（脚本在 scripts/ 下）
 cd "$(dirname "$0")/.."
 
-MIRROR="https://ghfast.top"          # GitHub 镜像（NSIS 工具链下载用）
+# 2026-10-28：ghfast.top 失效（TCP 通但 HTTPS 0 字节停滞）→ 换 gh-proxy.com；可用环境变量覆盖
+MIRROR="${TAURI_BUNDLER_TOOLS_GITHUB_MIRROR:-https://gh-proxy.com}"   # GitHub 镜像（NSIS 工具链下载用）
 PKG_NAME="Perchly_0.1.0_x64-setup.exe"
 BUNDLE_DIR="src-tauri/target/release/bundle/nsis"
 

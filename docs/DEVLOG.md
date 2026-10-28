@@ -38,6 +38,7 @@
 7. **NSIS 工具链下载超时**：Tauri bundler 从 GitHub 直连下载 nsis-3.13.zip 会全局超时且清空缓存。解决：`TAURI_BUNDLER_TOOLS_GITHUB_MIRROR=https://ghfast.top npm run tauri build -- --bundles nsis`（镜像前缀拼在 GitHub URL 前）。打包结果：**3.87 MB** 安装包（对比 Stretchly ~90MB）
 8. **crates.io 直连不通**（2026-10-28 起）：`static.crates.io` 超时。已配 `~/.cargo/config.toml` 换 rsproxy 镜像（`sparse+https://rsproxy.cn/index/`），编译恢复正常
 9. **单实例验证坑**：tasklist/Get-CimInstance 会把"用户已安装的旧版"和"源码目录测试版"当成两个实例——判断前先看 CommandLine 路径。tauri-plugin-single-instance 锁的是 app identifier，**不同路径的 exe 互认互斥**（实测 D:\APP 安装版 vs 源码版）
+10. **GitHub 镜像会轮换失效**（2026-10-28 实测）：ghfast.top TCP 可连但 HTTPS 传输 0 字节停滞，tauri bundler 下载 nsis-3.13.zip 卡死在 ESTABLISHED 连接上；curl 直测可复现（`curl --max-time 25` 探测，gh-proxy.com 当时可用且 ~180KB/s）。注意 bundler 内置下载器（ureq）走镜像很慢且**无任何进度输出**——"Downloading" 行停留 6 分钟≠卡死，`%LOCALAPPDATA%\tauri\NSIS\` 出现 makensis.exe 才算完成；缓存命中后重跑直接跳制包。`scripts/build.sh` 已改为 `TAURI_BUNDLER_TOOLS_GITHUB_MIRROR` 环境变量可覆盖、默认 gh-proxy.com。另：MSVC 工具链现已可用（SDK 已装），#3 的"GNU only"结论过期；`~/.cargo/config.toml`（rsproxy 镜像，见 #8）可能丢失需重建
 
 ### 下一步（M2+）
 - [ ] 真机观感调优：SVG 鹦鹉透明窗口合成、DPI>1 多屏坐标
