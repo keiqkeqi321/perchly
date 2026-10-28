@@ -11,6 +11,10 @@ export interface PetDom {
   bubbleText: HTMLElement;
   /** 鹦鹉身体命中区（透明椭圆，接收指针事件 + 用于穿透判定） */
   hit: SVGEllipseElement;
+  /** SVG 鹦鹉本体（网易视频模式时隐藏） */
+  svg: SVGSVGElement;
+  /** SVG 所在的内层容器（网易 stage 的插入位） */
+  inner: HTMLElement;
 }
 
 /** 查找必需元素，找不到直接抛错（骨架写错时尽早暴露） */
@@ -26,5 +30,7 @@ export function getPetDom(): PetDom {
     bubble: required<HTMLElement>("#pet-bubble"),
     bubbleText: required<HTMLElement>("#pet-bubble-text"),
     hit: required<SVGEllipseElement>(".pet-hit"),
+    svg: required<SVGSVGElement>("#pet-svg"),
+    inner: required<HTMLElement>(".pet-inner"),
   };
 }

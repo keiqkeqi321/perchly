@@ -288,3 +288,28 @@ html, body {
     animation: none !important;
   }
 }
+
+/* ============ 网易云 WebM 兼容模式 ============ */
+/* 抠像画布容器：铺满窗口、等比缩放、不拦截事件（命中仍走 .pet-hit） */
+.netease-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+.netease-stage canvas {
+  width: 220px;
+  height: 220px;
+  image-rendering: auto;
+}
+
+/* 直显模式：视频本体圆角贴纸观感 */
+video.netease-raw {
+  width: 200px;
+  height: 200px;
+  border-radius: 24px;
+  object-fit: cover;
+  box-shadow: 0 6px 18px rgba(20, 25, 30, 0.35);
+}

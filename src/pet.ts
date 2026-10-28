@@ -20,6 +20,7 @@ import { bindEvents } from "./pet/bridge";
 import { setupPointer } from "./pet/pointer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CLICK_QUOTES, PARTY_QUOTES, pick } from "./pet/quotes";
+import { NeteasePetPlayer } from "./pet/netease";
 
 /** 连击彩蛋：连续点击次数（超时窗口内） */
 const COMBO_FOR_PARTY = 5;
@@ -28,6 +29,20 @@ const COMBO_WINDOW_MS = 2500;
 
 function main(): void {
   const dom = getPetDom();
+
+  /* ---------- 网易云资源兼容模式 ----------
+   * URL: /pet.html?netease=<id|random|all>[&key=1]
+   *   - <id>：播放 manifest 中指定资源
+   *   - random：随机一条
+   *   - all：顺序轮播（每条循环三遍后切换）
+   *   - &key=1：启用 WebGL 色距抠像（深灰背景视频会误抠眼睛，默认关闭）
+   * 默认直显模式：视频本体 + 圆角遮罩（与网易云官方呈现一致的贴纸观感）
+   * 失败自动回退 SVG 状态机。
+   */
+  const neteaseParam = new URLSearchParams(location.search).get("netease");
+  if (neteaseParam) {
+    void tryNeteaseMode(dom, neteaseParam);
+  }
 
   // 瞬时动作 + 气泡管理器
   const tricks = createTrickManager(dom);
@@ -104,6 +119,57 @@ function main(): void {
 
   // 页面卸载时清理（透明窗口常驻，一般走不到，聊胜于无）
   window.addEventListener("pagehide", () => tricks.dispose(), { once: true });
+}
+
+/** 网易云资源兼容模式实现：加载 manifest → 选资源 → 直显/抠像 → 隐藏 SVG */
+async function tryNeteaseMode(dom: ReturnType<typeof getPetDom>, param: string): Promise<void> {
+  interface ManifestItem { id: string; file: string; width: number; height: number }
+  try {
+    const res = await fetch("/assets/pets/netease/manifest.json");
+    const items: ManifestItem[] = await res.json();
+    if (!items.length) return;
+
+    // 选资源：random 随机 / all 轮播（此处取随机起点）/ 指定 id
+    let item: ManifestItem;
+    if (param === "random" || param === "all") {
+      item = items[Math.floor(Math.random() * items.length)];
+    } else {
+      item = items.find((it) => it.id === param) ?? items[0];
+    }
+
+    const stage = document.createElement("div");
+    stage.className = "netease-stage";
+    dom.inner.appendChild(stage);
+
+    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`, {
+      // &key=1 才抠像；深灰背景视频抠像会误伤眼珠，默认直显
+      keying: new URLSearchParams(location.search).get("key") === "1",
+    });
+    const ok = await player.attach(stage);
+    if (!ok) {
+      console.warn("[pet] 网易资源初始化失败，回退 SVG 模式");
+      stage.remove();
+      return;
+    }
+
+    // 成功：隐藏 SVG 鹦鹉与 Zzz，视频模式接管
+    dom.svg.style.display = "none";
+    document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = "none"));
+
+    // all 模式：每条播放三遍后换下一条
+    if (param === "all") {
+      const idx = items.indexOf(item);
+      window.setTimeout(() => {
+        player.destroy(); stage.remove();
+        dom.svg.style.display = "";
+        void tryNeteaseMode(dom, items[(idx + 1) % items.length].id);
+      }, (player.durationMs || 4000) * 3);
+    }
+
+    console.info(`[pet] 网易云模式${player.keyingEnabled ? "(抠像)" : "(直显)"}: ${item.id} (${item.width}x${item.height})`);
+  } catch (err) {
+    console.warn("[pet] 网易云模式初始化失败，回退 SVG:", err);
+  }
 }
 
 main();

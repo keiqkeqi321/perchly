@@ -6,3 +6,4 @@ src-tauri/gen
 .DS_Store
 docs/netease_pet_assets/*.webm
 docs/netease_pet_assets/preview*.gif
+public/assets/pets/netease/*.webm
