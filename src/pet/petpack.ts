@@ -229,21 +229,31 @@ export class PetPackEngine {
   /** 拖动开始：固定飞翔 + 光晕（规则 drag）。领养预热片，瞬时切换 */
   async dragStart(): Promise<void> {
     if (!this.pack.assets.fly.length) return;
+    // 取消挂起的"回待机"（快速松手又立刻再拖的场景）
+    window.clearTimeout(this.pendingReturnTimer);
     this.dragging = true;
     window.clearTimeout(this.idleTimer);
     this.interactSeq++; // 作废挂起的"回待机"定时器
     const rule = this.pack.triggerRules.find((r) => r.when === "drag");
     const file = this.pack.assets.fly[0];
     await this.playBody(file, "fly"); // 预热池命中则零延迟
+    this.flyShownAt = Date.now();
     this.applyRule(rule);
   }
 
-  /** 拖动结束：停背景，回待机；fly 回收进预热池（下次拖动零延迟） */
+  /** 拖动结束：停背景，回待机；fly 回收进预热池（下次拖动零延迟）。
+   *  带最小飞翔时长保护：即便上游误报松手，飞翔也至少展示 600ms */
   dragEnd(): void {
     if (!this.dragging) return;
     this.dragging = false;
     this.stopBg();
-    // fly 若正在上屏：送回预热池（暂停隐藏，不销毁）
+    const elapsed = Date.now() - this.flyShownAt;
+    const delay = Math.max(0, 600 - elapsed);
+    this.pendingReturnTimer = window.setTimeout(() => this.returnFromFly(), delay);
+  }
+
+  /** 真正切回待机（fly 回池） */
+  private returnFromFly(): void {
     const flyFile = this.pack.assets.fly[0];
     if (this.bodyPlayer && this.currentBodyFile === flyFile) {
       const p = this.bodyPlayer;
@@ -253,8 +263,10 @@ export class PetPackEngine {
       this.warmBody.set(flyFile, p);
     }
     void this.playBody(this.pickIdle(), "idle").then(() => this.scheduleIdleRotation());
-    // 下轮空闲再补预热（fly 已回池，其余照常）
   }
+
+  private flyShownAt = 0;
+  private pendingReturnTimer = 0;
 
   /* ---------------- 背景层 ---------------- */
 
@@ -297,6 +309,7 @@ export class PetPackEngine {
   dispose(): void {
     this.disposed = true;
     window.clearTimeout(this.idleTimer);
+    window.clearTimeout(this.pendingReturnTimer);
     this.bodyPlayer?.destroy();
     this.bgPlayer?.destroy();
     for (const p of this.warmBody.values()) if (p instanceof NeteasePetPlayer) p.destroy();

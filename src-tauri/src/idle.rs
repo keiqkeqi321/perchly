@@ -59,13 +59,50 @@ pub fn idle_ms() -> u64 {
     }
 }
 
+/// 桌宠拖动中：把系统空闲压为 0（拖动期间不触发自然休息三段式；不影响系统真实输入）
+pub fn dragging_now() -> bool {
+    DRAG_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 左键物理按下状态（dragEnd 确认用：startDragging 可能因事件竞争提前 resolve）
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn left_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    const VK_LBUTTON: i32 = 0x01;
+    (unsafe { GetAsyncKeyState(VK_LBUTTON) } as u16 & 0x8000) != 0
+}
+
+/// 非 Windows 平台暂回 true（macOS 实现留 M2：NSEvent.pressedMouseButtons）
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn left_button_down() -> bool {
+    false
+}
+
+// === 拖动状态：Rust 侧 idle 源（拖动窗口的鼠标事件不计入系统空闲） ===
+#[tauri::command]
+pub fn pet_drag_state() -> bool {
+    DRAG_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static DRAG_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub fn set_pet_drag(active: bool) {
+    DRAG_ACTIVE.store(active, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// 轮询循环（对齐 _checkIdleTime 的三段式）
 pub fn watch(check_interval_ms: u64, reset_time_ms: u64, tx: Sender<Cmd>) {
     let mut is_on_natural_break = false;
     let mut last_idle: u64 = 0;
     loop {
         std::thread::sleep(Duration::from_millis(check_interval_ms));
-        let idle = idle_ms();
+        let mut idle = idle_ms();
+        if dragging_now() {
+            idle = 0; // 桌宠拖动视为活动（拖动中不进入自然休息判定）
+        }
         if !is_on_natural_break && idle > 20_000 {
             is_on_natural_break = true;
         }

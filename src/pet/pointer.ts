@@ -231,12 +231,37 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
       if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
         dragged = true;
         handlers.onDragStart?.();
+        void invoke("set_pet_drag", { active: true }).catch(() => {});
         win
           .startDragging()
-          .then(() => { savePositionAfterDrag(); handlers.onDragEnd?.(); })
-          .catch((err) => console.warn("[pet] startDragging 失败:", err));
+          .then(() => void confirmDragEnd())
+          .catch((err) => {
+            console.warn("[pet] startDragging 失败:", err);
+            void finishDrag();
+          });
       }
     });
+
+    /** 拖动结束确认：startDragging 可能因事件竞争提前 resolve（人还按着），
+     *  用左键物理状态确认真正松手后才触发 onDragEnd（防飞翔被提前切走） */
+    async function confirmDragEnd(): Promise<void> {
+      for (let i = 0; i < 125; i++) { // 最多 ~10s 保险
+        try {
+          const down = await invoke<boolean>("left_button_down");
+          if (!down) break; // 左键真的抬起了
+        } catch {
+          break; // 查询失败（非 Windows 真机）：退化为立即结束
+        }
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      await finishDrag();
+    }
+
+    async function finishDrag(): Promise<void> {
+      savePositionAfterDrag();
+      void invoke("set_pet_drag", { active: false }).catch(() => {});
+      handlers.onDragEnd?.();
+    }
     host.addEventListener("pointerup", (e: PointerEvent) => {
       if (!pressed) return;
       pressed = false;

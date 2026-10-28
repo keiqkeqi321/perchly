@@ -114,7 +114,10 @@ pub fn run() {
             get_current_break,
             skip_current,
             postpone_break,
-            save_pet_position
+            save_pet_position,
+            crate::idle::set_pet_drag,
+            crate::idle::pet_drag_state,
+            crate::idle::left_button_down
         ])
         .on_window_event(|window, event| {
             // 设置窗口：点 X 直接销毁（按需重建，不常驻 → 省 WebView 进程）
