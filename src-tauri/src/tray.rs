@@ -108,6 +108,10 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
         "skin_svg" | "skin_netease" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选
             let skin = if id == "skin_svg" { PetSkin::Svg } else { PetSkin::Netease };
+            // 重复点同一皮肤跳过：避免 netease→netease 重入（中间会短暂回显 SVG 闪一帧）
+            if crate::settings::current(app).pet_skin == skin {
+                return;
+            }
             if let Some(ctx) = app.try_state::<crate::AppCtx>() {
                 let _ = ctx.store.lock().unwrap().update(
                     serde_json::json!({ "petSkin": skin.as_str() })

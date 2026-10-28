@@ -330,3 +330,24 @@ video.netease-raw {
   top: 50%;
   transform: translate(-50%, -50%);
 }
+
+/* 视频模式：冻结 SVG 状态机动效（视频层已移挂 #pet-root 物理隔离，
+   这里再冻结 stage 自身动画，双保险；气泡除外） */
+.stage-frozen,
+.stage-frozen .pet-inner,
+.stage-frozen .pet-svg,
+.stage-frozen .zzz {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+.stage-frozen .bubble {
+  animation: none !important;
+  /* 气泡保留 opacity/visibility 过渡（显隐平滑） */
+  transition: opacity 0.22s ease, visibility 0.22s !important;
+  transform: none !important;
+}
+/* 冻结模式下 stage 置于视频之上（气泡可见），命中层 z30 仍最上收事件 */
+.stage-frozen {
+  z-index: 20;
+}

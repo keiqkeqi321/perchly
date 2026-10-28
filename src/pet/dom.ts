@@ -3,6 +3,8 @@
  */
 
 export interface PetDom {
+  /** 最外层全窗口容器（视频层挂这里，脱离 .pet-inner 形变容器） */
+  root: HTMLElement;
   /** 状态 class（is-xxx / act-xxx）挂载点 */
   stage: HTMLElement;
   /** 说话气泡容器 */
@@ -28,6 +30,7 @@ function required<T extends Element>(selector: string): T {
 
 export function getPetDom(): PetDom {
   return {
+    root: required<HTMLElement>("#pet-root"),
     stage: required<HTMLElement>("#pet-stage"),
     bubble: required<HTMLElement>("#pet-bubble"),
     bubbleText: required<HTMLElement>("#pet-bubble-text"),

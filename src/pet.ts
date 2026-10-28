@@ -196,7 +196,9 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
 
     const stage = document.createElement("div");
     stage.className = "netease-stage";
-    dom.inner.appendChild(stage);
+    // 挂 #pet-root（与 .pet-stage 平级）：脱离 .pet-inner 形变容器——
+    // SVG 状态机的 act-tilt/跳跃等 transform 作用于 .pet-inner，视频在里面会被带着形变
+    dom.root.appendChild(stage);
 
     const engine = new PetPackEngine(pack, stage);
     const ok = await engine.start();
@@ -206,9 +208,9 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     packEngine = engine;
     packStage = stage;
 
-    // 视频模式接管：隐藏 SVG 与 Zzz，启用矩形命中层
-    dom.svg.style.display = "none";
-    document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = "none"));
+    // 视频模式接管：SVG 移出 DOM（防 WebView2 合成器偶发闪现旧帧），Zzz 深度隐藏，
+    // 启用矩形命中层
+    detachSvgLayer(dom);
     setHitShape("rect");
     dom.videoHit.style.display = "";
 
@@ -227,8 +229,48 @@ function disposePack(dom: ReturnType<typeof getPetDom>): void {
   packEngine = null;
   packStage?.remove();
   packStage = null;
+  reattachSvgLayer(dom);
+}
+
+/** SVG 移出 DOM + 冻结 stage 动画（视频模式）。
+ *  根因①：display:none 的 SVG 仍带 CSS 动画，状态机 class 切换（act-tilt/act-blink）
+ *  触发样式重算时，WebView2 合成器偶发把启动时的旧帧缓存错误上屏一帧。
+ *  根因②：.pet-inner 是形变容器（歪头/跳跃 transform），视频曾挂其内被带着形变跳动。
+ *  移出 DOM + 冻结动画 = 双隔离，视频与 SVG 各自独立 */
+let svgHome: { parent: HTMLElement; next: Node | null } | null = null;
+const detachedZzz: { el: HTMLElement; parent: HTMLElement; next: Node | null }[] = [];
+
+function detachSvgLayer(dom: ReturnType<typeof getPetDom>): void {
+  if (dom.svg.isConnected) {
+    svgHome = { parent: dom.svg.parentElement!, next: dom.svg.nextSibling };
+    dom.svg.remove();
+  }
+  detachedZzz.length = 0;
+  document.querySelectorAll<HTMLElement>(".zzz").forEach((el) => {
+    detachedZzz.push({ el, parent: el.parentElement!, next: el.nextSibling });
+    el.remove();
+  });
+  // 冻结 stage 全部动效（气泡除外——视频模式气泡仍要平滑显隐）
+  dom.stage.classList.add("stage-frozen");
+}
+
+/** SVG 插回原位、解冻 stage（切回 SVG 皮肤） */
+function reattachSvgLayer(dom: ReturnType<typeof getPetDom>): void {
+  dom.stage.classList.remove("stage-frozen");
+  if (svgHome && !dom.svg.isConnected) {
+    const next = svgHome.next?.isConnected ? svgHome.next : null;
+    svgHome.parent.insertBefore(dom.svg, next);
+    svgHome = null;
+  }
   dom.svg.style.display = "";
-  document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = ""));
+  for (const { el, parent, next } of detachedZzz) {
+    if (!el.isConnected) {
+      const anchor = next?.isConnected ? next : null;
+      parent.insertBefore(el, anchor);
+    }
+    el.style.display = "";
+  }
+  detachedZzz.length = 0;
 }
 
 main();
