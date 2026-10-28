@@ -30,6 +30,8 @@ pub fn build(app: &AppHandle, tx: std::sync::mpsc::Sender<Cmd>) {
     .unwrap();
 
     let _ = TrayIconBuilder::with_id("perchly")
+        // 编译期嵌入 32x32 图标：托盘为小尺寸渲染，直接给低分辨率源图更清晰
+        .icon(tauri::include_image!("icons/32x32.png"))
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| {
