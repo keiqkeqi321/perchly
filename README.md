@@ -17,7 +17,7 @@
 ```bash
 npm install
 npm run tauri dev        # 开发
-npm run tauri build      # 打包（NSIS 安装包）
+./scripts/build.sh       # 一键打包（NSIS 安装包；Windows 可直接双击 scripts\build.cmd）
 ```
 
 > 打包若遇 NSIS 工具链下载超时（GitHub 直连慢），走镜像：

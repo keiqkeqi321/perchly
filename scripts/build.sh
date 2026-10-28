@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Perchly 一键打包脚本
-# 用法: ./build.sh            → 前端构建 + Rust release + NSIS 安装包
-#       ./build.sh dev        → 仅开发模式 (npm run tauri dev)
-#       ./build.sh check      → 快速自检 (tsc + cargo test)
-#       ./build.sh clean      → 清理构建产物
+# 用法: ./scripts/build.sh     → 前端构建 + Rust release + NSIS 安装包
+#       ./scripts/build.sh dev    → 仅开发模式 (npm run tauri dev)
+#       ./scripts/build.sh check  → 快速自检 (tsc + cargo test)
+#       ./scripts/build.sh clean  → 清理构建产物
+# Windows 资源管理器可直接双击 scripts\build.cmd 调用本脚本
 #
 # 踩坑备注见 docs/DEVLOG.md：
 #   #4 CARGO_BUILD_JOBS=2 防并行竞态；#7 NSIS 走镜像；#9 杀实例等 3 秒再打包
