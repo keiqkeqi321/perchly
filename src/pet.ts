@@ -77,7 +77,7 @@ function main(): void {
   let comboTimer = 0;
 
   function handlePetClick(): void {
-    // 视频皮肤：点击 = 换下一条动画 + 气泡（连点彩蛋照旧）
+    // 视频皮肤：点击 = 换下一条动画 + 气泡（连点彩蛋照旧，且也换动画给反馈）
     if (currentSkin === "netease") {
       window.clearTimeout(comboTimer);
       comboTimer = window.setTimeout(() => { combo = 0; }, COMBO_WINDOW_MS);
@@ -86,6 +86,7 @@ function main(): void {
         combo = 0;
         window.clearTimeout(comboTimer);
         tricks.showBubble(pick(PARTY_QUOTES), 5000);
+        void nextNeteaseClip(); // 彩蛋也换动画：不换会显得"点击没反应"
         return;
       }
       tricks.showBubble(pick(CLICK_QUOTES));
@@ -236,13 +237,12 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
 
 /** 点击换动画：播下一条（循环） */
 async function nextNeteaseClip(): Promise<void> {
-  if (!neteaseItems.length || !activePlayer) return;
+  if (!neteaseItems.length || !activePlayer || !activeStage) return;
   neteaseIdx = (neteaseIdx + 1) % neteaseItems.length;
   const item = neteaseItems[neteaseIdx];
-  const dom = getPetDom();
   activePlayer.destroy();
   activePlayer = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`);
-  const ok = await activePlayer.attach(activeStage!);
+  const ok = await activePlayer.attach(activeStage);
   if (!ok) {
     console.warn(`[pet] 动画 ${item.id.slice(0, 8)} 加载失败，回退 SVG`);
     void applySkin("svg");

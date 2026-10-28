@@ -38,14 +38,14 @@ export function getPetDom(): PetDom {
   };
 }
 
-/** 视频命中层：动态创建（老骨架无需改 pet.html），初始隐藏 */
+/** 视频命中层：动态创建（老骨架无需改 pet.html），仅创建时初始隐藏 */
 function ensureVideoHit(): HTMLElement {
   let el = document.querySelector<HTMLElement>("#pet-video-hit");
   if (!el) {
     el = document.createElement("div");
     el.id = "pet-video-hit";
+    el.style.display = "none";
     document.body.appendChild(el);
   }
-  el.style.display = "none";
   return el;
 }
