@@ -32,6 +32,23 @@ const HOVER_POLL_MS = 250;
 /** 身体命中椭圆（SVG viewBox 坐标，与 pet.html 中 .pet-hit 保持一致） */
 const HIT_ELLIPSE = { cx: 104, cy: 152, rx: 60, ry: 64 } as const;
 
+/** 当前命中区形状：ellipse=SVG 鹦鹉身体；rect=视频全窗口（网易云皮肤 200x200 居中） */
+type HitShape = "ellipse" | "rect";
+let hitShape: HitShape = "ellipse";
+
+/** 皮肤切换时由 pet.ts 调用：改命中区（rect 模式整个 220x220 窗口都可命中） */
+export function setHitShape(shape: HitShape): void {
+  hitShape = shape;
+}
+
+/** 命中元素的判定（事件 target 在椭圆或矩形命中层上都算"在身上"） */
+function isHitTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    (target.closest(".pet-hit") !== null || target.closest("#pet-video-hit") !== null)
+  );
+}
+
 export interface PointerHandlers {
   /** 有效单击（非拖拽、非双击的第二下） */
   onClick(): void;
@@ -62,8 +79,11 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
     return { x: (cursor.x - origin.x) / dpr, y: (cursor.y - origin.y) / dpr };
   }
 
-  /** 逻辑坐标是否落在身体椭圆内（window 220x220 = viewBox 220x220，1:1） */
+  /** 逻辑坐标是否在命中区内（ellipse=SVG 身体椭圆；rect=全窗口，网易云视频模式） */
   function insideBodyEllipse(p: { x: number; y: number }): boolean {
+    if (hitShape === "rect") {
+      return p.x >= 0 && p.x <= 220 && p.y >= 0 && p.y <= 220;
+    }
     const dx = (p.x - HIT_ELLIPSE.cx) / HIT_ELLIPSE.rx;
     const dy = (p.y - HIT_ELLIPSE.cy) / HIT_ELLIPSE.ry;
     return dx * dx + dy * dy <= 1;
@@ -148,10 +168,9 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
     }
   }
 
-  /** 接收模式下的 mousemove 快速路径：target 离开身体 → 立刻恢复穿透 */
+  /** 接收模式下的 mousemove 快速路径：target 离开命中区 → 立刻恢复穿透 */
   function onFastMousemove(e: MouseEvent): void {
-    const inBody = e.target instanceof Element && e.target.closest(".pet-hit") !== null;
-    if (!inBody) void enterPassthrough();
+    if (!isHitTarget(e.target)) void enterPassthrough();
   }
 
   function bindMousemove(): void {
@@ -193,45 +212,44 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
   }
 
   // pointerdown：记录起点；等 move 超阈值再 startDragging，< 5px 仍算点击
-  dom.hit.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return; // 只处理左键
-    pressed = true;
-    dragged = false;
-    downX = e.clientX;
-    downY = e.clientY;
-  });
+  // 双宿主：SVG 椭圆 + 视频矩形层（网易云皮肤时椭圆在 display:none 的 SVG 里收不到事件）
+  const hitHosts: (Element & GlobalEventHandlers)[] = [dom.hit, dom.videoHit];
+  for (const host of hitHosts) {
+    host.addEventListener("pointerdown", (e: PointerEvent) => {
+      if (e.button !== 0) return; // 只处理左键
+      pressed = true;
+      dragged = false;
+      downX = e.clientX;
+      downY = e.clientY;
+    });
+    host.addEventListener("pointermove", (e: PointerEvent) => {
+      if (!pressed || dragged) return;
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
+        dragged = true;
+        win
+          .startDragging()
+          .then(() => savePositionAfterDrag())
+          .catch((err) => console.warn("[pet] startDragging 失败:", err));
+      }
+    });
+    host.addEventListener("pointerup", (e: PointerEvent) => {
+      if (!pressed) return;
+      pressed = false;
+      if (dragged) return; // 拖拽结束不算点击
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) return; // 保险
 
-  // pointermove（按下期间）：超过阈值 → 进入系统拖拽（只触发一次）
-  dom.hit.addEventListener("pointermove", (e) => {
-    if (!pressed || dragged) return;
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
-      dragged = true;
-      win
-        .startDragging()
-        .then(() => savePositionAfterDrag())
-        .catch((err) => console.warn("[pet] startDragging 失败:", err));
-    }
-  });
-
-  dom.hit.addEventListener("pointerup", (e) => {
-    if (!pressed) return;
-    pressed = false;
-    if (dragged) return; // 拖拽结束不算点击
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) return; // 保险
-
-    const now = Date.now();
-    if (now - lastClickAt <= DOUBLE_CLICK_MS) {
-      lastClickAt = 0; // 防三连击再触发
-      handlers.onDoubleClick();
-    } else {
-      lastClickAt = now;
-      handlers.onClick();
-    }
-  });
-
-  // pointercancel：复位按下状态
-  dom.hit.addEventListener("pointercancel", () => {
-    pressed = false;
-    dragged = false;
-  });
+      const now = Date.now();
+      if (now - lastClickAt <= DOUBLE_CLICK_MS) {
+        lastClickAt = 0; // 防三连击再触发
+        handlers.onDoubleClick();
+      } else {
+        lastClickAt = now;
+        handlers.onClick();
+      }
+    });
+    host.addEventListener("pointercancel", () => {
+      pressed = false;
+      dragged = false;
+    });
+  }
 }

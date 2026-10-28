@@ -303,3 +303,14 @@ video.netease-raw {
   border-radius: 24px;
   object-fit: cover;
 }
+
+/* 视频模式矩形命中层：全窗口、透明、可交互（网易云皮肤时显示） */
+#pet-video-hit {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  cursor: grab;
+}
+#pet-video-hit:active {
+  cursor: grabbing;
+}
