@@ -36,6 +36,8 @@
 5. **WebView2 ERROR_BUSY (0x800700AA)**：实例被杀后 user-data-dir 未释放，紧接着重启会失败——等几秒再启
 6. **pet 穿透**：Tauri v2 的 setIgnoreCursorEvents 无 Electron 式 forward 参数 → 前端 250ms cursorPosition 轮询方案（pet/pointer.ts）
 7. **NSIS 工具链下载超时**：Tauri bundler 从 GitHub 直连下载 nsis-3.13.zip 会全局超时且清空缓存。解决：`TAURI_BUNDLER_TOOLS_GITHUB_MIRROR=https://ghfast.top npm run tauri build -- --bundles nsis`（镜像前缀拼在 GitHub URL 前）。打包结果：**3.87 MB** 安装包（对比 Stretchly ~90MB）
+8. **crates.io 直连不通**（2026-10-28 起）：`static.crates.io` 超时。已配 `~/.cargo/config.toml` 换 rsproxy 镜像（`sparse+https://rsproxy.cn/index/`），编译恢复正常
+9. **单实例验证坑**：tasklist/Get-CimInstance 会把"用户已安装的旧版"和"源码目录测试版"当成两个实例——判断前先看 CommandLine 路径。tauri-plugin-single-instance 锁的是 app identifier，**不同路径的 exe 互认互斥**（实测 D:\APP 安装版 vs 源码版）
 
 ### 下一步（M2+）
 - [ ] 真机观感调优：SVG 鹦鹉透明窗口合成、DPI>1 多屏坐标

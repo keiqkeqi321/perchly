@@ -83,6 +83,30 @@ fn save_pet_position(x: i32, y: i32, ctx: tauri::State<AppCtx>) -> Result<(), St
 
 pub fn run() {
     tauri::Builder::default()
+        // 单实例保护：必须最先注册（第二个实例启动时直接退出，并唤起已有实例）
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            // 已有实例收到信号：弹出设置窗口作为可见反馈（settings 是按需创建的）
+            match app.get_webview_window("settings") {
+                Some(w) => {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+                None => {
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        app,
+                        "settings",
+                        tauri::WebviewUrl::App("/".into()),
+                    )
+                    .title("Perchly 设置")
+                    .inner_size(720.0, 540.0)
+                    .resizable(true)
+                    .build()
+                    .map_err(|e| eprintln!("perchly: settings window build failed: {e}"))
+                    .and_then(|w| w.set_focus().map_err(|e| eprintln!("perchly: focus failed: {e}")));
+                }
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
