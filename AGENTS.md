@@ -33,6 +33,7 @@ Tauri 2 休息提醒 + 桌宠。Rust 侧移植 Stretchly 调度语义，前端�
 - `update_settings(patch)` → 浅合并 + 原子落盘，成功后广播 `SettingsChanged`
 - `get_current_break()` → `{ kind: "micro"|"long", durationMs, startedAt(epoch ms) } | null`
 - `skip_current()` / `postpone_break()` / `save_pet_position(x, y)`
+- `popup_pet_menu()` → 在光标处弹出与托盘一致的菜单（桌宠右键；菜单构建/事件分发在 tray.rs 全局 `on_menu_event`）
 
 ### 事件通道（tauri Emitter）
 - 通道 `"planner"`：`{ type, data }`，type ∈ `microbreak-notification | break-notification | microbreak-started | break-started | micro-finished | long-finished | paused | resumed | status`

@@ -20,6 +20,8 @@ html, body {
 }
 
 #pet-root { position: fixed; inset: 0; }
+/* 启动面纱：皮肤未定前不可见（visibility 保布局；applySkin 就绪后摘除） */
+#pet-root.skin-pending { visibility: hidden; }
 .pet-stage { position: absolute; inset: 0; }
 
 /* 鹦鹉整体容器：跳跃/蹦跳等整体动作作用在这里（呼吸作用在 svg 上，避免 transform 冲突） */
@@ -343,9 +345,13 @@ video.pack-video {
 }
 .stage-frozen .bubble {
   animation: none !important;
-  /* 气泡保留 opacity/visibility 过渡（显隐平滑） */
+  /* 气泡保留 opacity/visibility 过渡（显隐平滑）；
+     transform 必须保留 translateX(-50%) —— 气泡水平居中全靠它，置 none 会右偏溢出窗口 */
   transition: opacity 0.22s ease, visibility 0.22s !important;
-  transform: none !important;
+  transform: translate(-50%, 6px) !important;
+}
+.stage-frozen .bubble.show {
+  transform: translate(-50%, 0) !important;
 }
 /* 冻结模式下 stage 置于视频之上（气泡可见），命中层 z30 仍最上收事件 */
 .stage-frozen {

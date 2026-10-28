@@ -6,7 +6,7 @@
  *   state.ts   基态状态机（is-xxx）
  *   tricks.ts  瞬时动作 + 气泡（act-xxx）
  *   bridge.ts  后端事件 → 状态翻译
- *   pointer.ts 拖拽 / 点击 / 双击 / 鼠标穿透
+ *   pointer.ts 拖拽 / 点击 / 右键菜单 / 鼠标穿透
  *
  * 启动即渲染（DOM 静态写在 pet.html 里，无动态构建），
  * 各异步模块失败时逐个降级，不让桌宠白屏。
@@ -18,7 +18,6 @@ import { createStateMachine } from "./pet/state";
 import { createTrickManager } from "./pet/tricks";
 import { bindEvents } from "./pet/bridge";
 import { setupPointer } from "./pet/pointer";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CLICK_QUOTES, PARTY_QUOTES, pick } from "./pet/quotes";
@@ -118,19 +117,6 @@ function main(): void {
     }
   }
 
-  function handleDoubleClick(): void {
-    // 双击回托盘：气泡先收掉，再隐藏窗口
-    dom.bubble.classList.remove("show");
-    try {
-      getCurrentWindow()
-        .hide()
-        .catch((err) => console.warn("[pet] 隐藏窗口失败:", err));
-    } catch (err) {
-      // 无 Tauri 窗口环境（如纯浏览器调试）：getCurrentWindow 同步抛错，吞掉即可
-      console.warn("[pet] 当前环境无窗口句柄，忽略双击隐藏:", err);
-    }
-  }
-
   /* ---------- 异步模块：事件桥 + 交互层，失败各自降级 ---------- */
   bindEvents(sm, tricks).catch((err) => {
     // 事件桥挂了：桌宠仍能展示与点击，只是收不到提醒
@@ -139,15 +125,23 @@ function main(): void {
 
   setupPointer(dom, {
     onClick: handlePetClick,
-    onDoubleClick: handleDoubleClick,
+    // 右键 → Rust 在光标处弹与托盘一致的菜单（显隐项文案随可见性翻转）
+    onContextMenu: () => {
+      void invoke("popup_pet_menu").catch((err) => console.warn("[pet] 右键菜单弹出失败:", err));
+    },
     onDragStart: () => { void packEngine?.dragStart(); },
     onDragEnd: () => packEngine?.dragEnd(),
   }).catch((err) => {
-    // 交互层挂了（极端情况，如非 Tauri 环境）：挂最简单的原生 click/dblclick 兜底，
-    // 至少保留点击反应、彩蛋与双击隐藏，不会变成点不动的白板
+    // 交互层挂了（极端情况，如非 Tauri 环境）：挂最简单的原生事件兜底，
+    // 至少保留点击反应与彩蛋，不会变成点不动的白板
     console.warn("[pet] 交互层初始化失败，改用原生点击兜底:", err);
     dom.hit.addEventListener("click", handlePetClick);
-    dom.hit.addEventListener("dblclick", handleDoubleClick);
+    const onContextMenu = (e: Event): void => {
+      e.preventDefault();
+      void invoke("popup_pet_menu").catch(() => {});
+    };
+    dom.hit.addEventListener("contextmenu", onContextMenu);
+    dom.videoHit.addEventListener("contextmenu", onContextMenu);
   });
 
   // 页面卸载时清理（透明窗口常驻，一般走不到，聊胜于无）
@@ -180,6 +174,7 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     disposePack(dom);
     setHitShape("ellipse");
     dom.videoHit.style.display = "none";
+    dom.root.classList.remove("skin-pending");
     console.info("[pet] 皮肤: SVG 鹦鹉");
     return;
   }
@@ -192,7 +187,11 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     if (seq !== applySeq) return;
     if (!pack.assets.idle.length) throw new Error("宠物包没有待机动画");
 
-    disposePack(dom); // 清旧层
+    // 清旧引擎，但 SVG 保持移出（即将再进视频模式，等待期不该闪现 SVG）
+    disposePack(dom, { keepSvgDetached: true });
+    // 先移出 SVG 再异步启动：引擎启动要等视频首帧（数百 ms），
+    // 若事后再 detach，等待期 SVG 在 DOM 里裸奔，合成器画一帧就是"闪默认 SVG"
+    detachSvgLayer(dom);
 
     const stage = document.createElement("div");
     stage.className = "pack-stage";
@@ -208,31 +207,35 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     packEngine = engine;
     packStage = stage;
 
-    // 视频模式接管：SVG 移出 DOM（防 WebView2 合成器偶发闪现旧帧），Zzz 深度隐藏，
-    // 启用矩形命中层
-    detachSvgLayer(dom);
+    // 视频模式接管：Zzz 深度隐藏（detachSvgLayer 已做），启用矩形命中层，揭面纱
     setHitShape("rect");
     dom.videoHit.style.display = "";
+    dom.root.classList.remove("skin-pending");
 
     console.info(`[pet] 皮肤: 宠物包「${pack.name}」(${pack.id}) 待机×${pack.assets.idle.length} 交互×${pack.assets.interact.length}`);
   } catch (err) {
     if (seq === applySeq) {
       console.warn("[pet] 宠物包不可用，回退 SVG:", err);
       disposePack(dom);
+      dom.root.classList.remove("skin-pending");
     }
   }
 }
 
-/** 清理宠物包引擎并恢复 SVG 可见 */
-function disposePack(dom: ReturnType<typeof getPetDom>): void {
+/** 清理宠物包引擎。keepSvgDetached=true 时 SVG 保持移出（pack→pack 重入，
+ *  等待期不该露脸）；默认重挂 SVG（切回 SVG / 回退场景） */
+function disposePack(
+  dom: ReturnType<typeof getPetDom>,
+  opts: { keepSvgDetached?: boolean } = {},
+): void {
   packEngine?.dispose();
   packEngine = null;
   packStage?.remove();
   packStage = null;
-  reattachSvgLayer(dom);
+  if (!opts.keepSvgDetached) reattachSvgLayer(dom);
 }
 
-/** SVG 移出 DOM + 冻结 stage 动画（视频模式）。
+/** SVG 移出 DOM + 冻结 stage 动画（视频模式）。幂等：重复调用只补冻结标记。
  *  根因①：display:none 的 SVG 仍带 CSS 动画，状态机 class 切换（act-tilt/act-blink）
  *  触发样式重算时，WebView2 合成器偶发把启动时的旧帧缓存错误上屏一帧。
  *  根因②：.pet-inner 是形变容器（歪头/跳跃 transform），视频曾挂其内被带着形变跳动。
@@ -244,12 +247,13 @@ function detachSvgLayer(dom: ReturnType<typeof getPetDom>): void {
   if (dom.svg.isConnected) {
     svgHome = { parent: dom.svg.parentElement!, next: dom.svg.nextSibling };
     dom.svg.remove();
+    // Zzz 归位信息只在实际移出时收集（重复调用不得清空已记录的归位信息）
+    detachedZzz.length = 0;
+    document.querySelectorAll<HTMLElement>(".zzz").forEach((el) => {
+      detachedZzz.push({ el, parent: el.parentElement!, next: el.nextSibling });
+      el.remove();
+    });
   }
-  detachedZzz.length = 0;
-  document.querySelectorAll<HTMLElement>(".zzz").forEach((el) => {
-    detachedZzz.push({ el, parent: el.parentElement!, next: el.nextSibling });
-    el.remove();
-  });
   // 冻结 stage 全部动效（气泡除外——视频模式气泡仍要平滑显隐）
   dom.stage.classList.add("stage-frozen");
 }

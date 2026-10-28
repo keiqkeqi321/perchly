@@ -1,6 +1,7 @@
 //! 托盘 —— 状态 tooltip + 常用操作菜单 + 桌宠皮肤切换
 //!
 //! 菜单可整体重建（build_menu + rebuild_menu）：皮肤切换后重挂菜单刷新勾选态。
+//! 同一份菜单也用于桌宠右键（popup）：菜单事件挂全局 on_menu_event，两个入口共用。
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
@@ -28,16 +29,24 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
     let pause_forever = MenuItem::with_id(app, "pause_forever", "暂停（无限期）", true, None::<&str>).unwrap();
     let resume = MenuItem::with_id(app, "resume", "恢复", true, None::<&str>).unwrap();
 
-    // —— 桌宠显隐 ——
-    let show_pet = MenuItem::with_id(app, "show_pet", "显示桌宠", true, None::<&str>).unwrap();
+    // —— 桌宠显隐（随可见性翻转文案：可见时提供"隐藏"，隐藏时提供"显示"）——
+    let pet_visible = app
+        .get_webview_window("pet")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+    let show_pet = MenuItem::with_id(
+        app, "show_pet",
+        if pet_visible { "隐藏桌宠" } else { "显示桌宠" },
+        true, None::<&str>,
+    ).unwrap();
 
     // —— 桌宠皮肤子菜单（勾选单选）——
     let sk_svg = CheckMenuItem::with_id(
-        app, "skin_svg", "SVG 鹦鹉（默认）",
+        app, "skin_svg", "SVG 鹦鹉",
         true, skin == PetSkin::Svg, None::<&str>,
     ).unwrap();
     let sk_pack = CheckMenuItem::with_id(
-        app, "skin_pack", "宠物包动画",
+        app, "skin_pack", "宠物包动画（默认）",
         !s.pack_missing, skin == PetSkin::Pack, None::<&str>,
     ).unwrap();
     let skin_menu = Submenu::with_id_and_items(
@@ -64,7 +73,7 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
     .unwrap()
 }
 
-/// 首次构建（setup 里调用）
+/// 首次构建（setup 里调用；须在桌宠初始显隐落定之后，菜单文案才准确）
 pub fn build(app: &AppHandle, tx: std::sync::mpsc::Sender<Cmd>) {
     let menu = build_menu(app, &tx);
     let _ = TrayIconBuilder::with_id("perchly")
@@ -72,11 +81,26 @@ pub fn build(app: &AppHandle, tx: std::sync::mpsc::Sender<Cmd>) {
         .tooltip("Perchly")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| {
-            let id = event.id().as_ref().to_string();
-            handle_menu(app, &tx, id.as_str());
-        })
         .build(app);
+
+    // 菜单事件挂全局：托盘菜单与桌宠右键 popup 菜单共用一份 handle_menu。
+    // 只挂这一处——若同时挂 tray 专属 on_menu_event 会双重触发
+    app.on_menu_event(move |app, event| {
+        let id = event.id().as_ref().to_string();
+        handle_menu(app, &tx, id.as_str());
+    });
+}
+
+/// 桌宠右键：在光标处弹出与托盘一致的菜单（每次新鲜构建，勾选态/显隐文案即时）
+pub fn popup(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("pet") else { return };
+    let Some(ctx) = app.try_state::<crate::AppCtx>() else { return };
+    let menu = build_menu(app, &ctx.tx);
+    // Windows 原生菜单要求所属窗口前台，否则点击菜单外区域不消失
+    let _ = w.set_focus();
+    if let Err(e) = w.popup_menu(&menu) {
+        eprintln!("perchly: 桌宠右键菜单弹出失败: {e}");
+    }
 }
 
 /// 皮肤切换后重建菜单刷新勾选态
@@ -99,11 +123,16 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
         "pause_forever" => { let _ = tx.send(Cmd::Pause(None)); }
         "resume" => { let _ = tx.send(Cmd::Resume); }
         "show_pet" => {
-            // 双击隐藏 / petEnabled=false 后的重新打开入口
+            // 显隐切换（菜单文案随可见性翻转；双击隐藏已移除，这里是桌宠唯一显隐入口）
             if let Some(w) = app.get_webview_window("pet") {
-                let _ = w.show();
-                let _ = w.set_focus();
+                if w.is_visible().unwrap_or(false) {
+                    let _ = w.hide();
+                } else {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
             }
+            rebuild(app);
         }
         "skin_svg" | "skin_pack" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选

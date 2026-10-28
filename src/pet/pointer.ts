@@ -1,5 +1,5 @@
 /**
- * 交互层：拖拽 / 点击判定 / 双击隐藏 / 鼠标穿透。
+ * 交互层：拖拽 / 点击判定 / 右键菜单 / 鼠标穿透。
  *
  * 穿透策略（重要）：
  *   本机 @tauri-apps/api 2.12.4 的 setIgnoreCursorEvents 只有单参数版本，
@@ -11,11 +11,11 @@
  *        并挂 mousemove 快速路径：事件 target 不在 .pet-hit 上时立刻恢复穿透。
  *   API 报错（平台不支持/无权限）则降级为常驻可点击。
  *
- * 点击 / 拖拽：
+ * 点击 / 拖拽 / 右键：
  *   pointerdown 记录起点；move 位移 ≥ 5px 判定拖拽 → startDragging()
  *   （Windows 上该调用阻塞至松开），resolve 后用 outerPosition()（物理坐标）
- *   invoke("save_pet_position") 持久化；pointerup 位移 < 5px 计为点击，
- *   400ms 内两次点击 = 双击 → hide() 回托盘。
+ *   invoke("save_pet_position") 持久化；pointerup 位移 < 5px 计为点击。
+ *   右键（contextmenu）→ 回调 onContextMenu，由 pet.ts invoke 弹托盘同款菜单。
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -24,8 +24,6 @@ import type { PetDom } from "./dom";
 
 /** 区分点击与拖拽的位移阈值（px） */
 const DRAG_THRESHOLD_PX = 5;
-/** 双击判定窗口（ms） */
-const DOUBLE_CLICK_MS = 400;
 /** 穿透期间探测光标的轮询间隔（ms）。非 rAF，仅 4 次/秒的轻量 IPC 轮询 */
 const HOVER_POLL_MS = 250;
 
@@ -50,10 +48,10 @@ function isHitTarget(target: EventTarget | null): boolean {
 }
 
 export interface PointerHandlers {
-  /** 有效单击（非拖拽、非双击的第二下） */
+  /** 有效单击（非拖拽；快速连点每次都算，5 连击彩蛋依赖于此） */
   onClick(): void;
-  /** 双击 → 隐藏到托盘 */
-  onDoubleClick(): void;
+  /** 右键 → 弹出与托盘一致的菜单 */
+  onContextMenu?(): void;
   /** 拖拽判定成立（位移过阈值，startDragging 前） */
   onDragStart?(): void;
   /** 系统拖拽结束（savePosition 之后） */
@@ -199,13 +197,12 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
   }
 
   /* =========================================================
-   * 点击 / 拖拽 / 双击
+   * 点击 / 拖拽 / 右键
    * ========================================================= */
   let downX = 0;
   let downY = 0;
   let pressed = false;
   let dragged = false; // 本轮按下是否已判定为拖拽
-  let lastClickAt = 0; // 上一次有效点击时间戳（双击判定）
 
   function savePositionAfterDrag(): void {
     // startDragging() 在 Windows 上阻塞至松开；resolve 后再取位置就是拖拽终点
@@ -267,19 +264,16 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
       pressed = false;
       if (dragged) return; // 拖拽结束不算点击
       if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) return; // 保险
-
-      const now = Date.now();
-      if (now - lastClickAt <= DOUBLE_CLICK_MS) {
-        lastClickAt = 0; // 防三连击再触发
-        handlers.onDoubleClick();
-      } else {
-        lastClickAt = now;
-        handlers.onClick();
-      }
+      handlers.onClick();
     });
     host.addEventListener("pointercancel", () => {
       pressed = false;
       dragged = false;
+    });
+    // 右键：托盘同款菜单（preventDefault 防 WebView2 默认菜单/选中文案）
+    host.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      handlers.onContextMenu?.();
     });
   }
 }

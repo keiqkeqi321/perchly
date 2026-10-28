@@ -129,7 +129,8 @@ impl Default for Settings {
             all_screens: true,
             // —— Perchly 自有 ——
             pet_enabled: true,
-            pet_skin: PetSkin::Svg,
+            // 默认皮肤=宠物包动画（视频）；资源缺失时 pet.ts 会优雅回退 SVG
+            pet_skin: PetSkin::Pack,
             pack_missing: false,
             pet_pos_x: None,
             pet_pos_y: None,
@@ -158,17 +159,18 @@ impl SettingsStore {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
         // 宠物包资源可用性探测（运行时，不落盘）
-        // dev：vite 从 public/ 提供资源，Resource 目录(target/debug)里没有 → 探测项目 public/
-        // release：探 Resource 目录（打包时 dist 资源打进安装包）
+        // dev：vite 从 public/ 提供资源，dist/ 未必构建过 → 探测项目 public/
+        // release：dist 资源嵌进 exe（tauri 默认不落盘到安装目录），
+        //          须查内嵌资产表（asset_resolver）而非文件系统——探 Resource 目录必然落空，
+        //          曾导致安装版「宠物包动画」菜单项灰掉无法切换
         let manifest_exists = if cfg!(debug_assertions) {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../public/assets/pets/cockatiel/manifest.json")
                 .exists()
         } else {
-            app.path()
-                .resolve("assets/pets/cockatiel/manifest.json", tauri::path::BaseDirectory::Resource)
-                .map(|p| p.exists())
-                .unwrap_or(false)
+            app.asset_resolver()
+                .get("assets/pets/cockatiel/manifest.json".into())
+                .is_some()
         };
         settings.pack_missing = !manifest_exists;
         Self { path, settings }

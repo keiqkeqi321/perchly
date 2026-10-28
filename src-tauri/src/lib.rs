@@ -56,11 +56,28 @@ fn get_settings(ctx: tauri::State<AppCtx>) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn update_settings(patch: serde_json::Value, ctx: tauri::State<AppCtx>) -> Result<(), String> {
+fn update_settings(
+    app: tauri::AppHandle,
+    patch: serde_json::Value,
+    ctx: tauri::State<AppCtx>,
+) -> Result<(), String> {
+    // petSkin 前后值（锁各自短作用域：rebuild 内部会再锁 store，std Mutex 不可重入）
+    let skin_before = ctx.store.lock().unwrap().settings.pet_skin;
     {
         let mut guard = ctx.store.lock().unwrap();
         guard.update(patch)?;
     }
+    let skin_after = ctx.store.lock().unwrap().settings.pet_skin;
+
+    // petSkin 实际变化 → 通知桌宠热切换 + 刷新托盘勾选。
+    // 此前设置页路径不发事件，皮肤要重启才变；且设置页先改后托盘点同名项会被
+    // 「已是该皮肤」提前 return，也不发事件——两条路都表现为"切不动"
+    if skin_before != skin_after {
+        use tauri::Emitter;
+        let _ = app.emit("pet-skin-changed", skin_after.as_str());
+        crate::tray::rebuild(&app);
+    }
+
     let _ = ctx.tx.send(Cmd::SettingsChanged);
     Ok(())
 }
@@ -79,6 +96,12 @@ fn postpone_break(ctx: tauri::State<AppCtx>) {
 fn save_pet_position(x: i32, y: i32, ctx: tauri::State<AppCtx>) -> Result<(), String> {
     let mut guard = ctx.store.lock().unwrap();
     guard.update(serde_json::json!({ "petPosX": x, "petPosY": y }))
+}
+
+/// 桌宠右键：在光标处弹出与托盘一致的菜单
+#[tauri::command]
+fn popup_pet_menu(app: tauri::AppHandle) {
+    crate::tray::popup(&app);
 }
 
 pub fn run() {
@@ -115,6 +138,7 @@ pub fn run() {
             skip_current,
             postpone_break,
             save_pet_position,
+            popup_pet_menu,
             crate::idle::set_pet_drag,
             crate::idle::pet_drag_state,
             crate::idle::left_button_down
@@ -153,9 +177,7 @@ pub fn run() {
                 });
             }
 
-            tray::build(app.handle(), tx.clone());
-
-            // 桌宠：恢复上次位置
+            // 桌宠：恢复上次位置（须在托盘构建前落定显隐，菜单「显示/隐藏桌宠」文案才准确）
             if let Some(w) = app.get_webview_window("pet") {
                 if let (Some(x), Some(y)) = (s.pet_pos_x, s.pet_pos_y) {
                     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
@@ -164,6 +186,8 @@ pub fn run() {
                     let _ = w.hide();
                 }
             }
+
+            tray::build(app.handle(), tx.clone());
 
             Ok(())
         })

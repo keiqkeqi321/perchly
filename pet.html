@@ -8,7 +8,9 @@
   </head>
   <body>
     <!-- 桌宠根容器：全部 UI 由 TS 加 class 驱动，SVG 骨架静态写在下面，方便 CSS/动画定位 -->
-    <div id="pet-root">
+    <!-- skin-pending：启动面纱——皮肤未定前整体不可见（防 pack 模式先画一帧 SVG，
+         被 WebView2 合成器缓存成旧帧，之后偶发闪现），applySkin 就绪后摘除 -->
+    <div id="pet-root" class="skin-pending">
       <div class="pet-stage is-idle" id="pet-stage">
         <!-- 打瞌睡的 Zzz（sleepy 基态下由 CSS 动画飘起） -->
         <span class="zzz">Z</span><span class="zzz">z</span><span class="zzz">z</span>
