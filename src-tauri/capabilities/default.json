@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "所有窗口的默认能力（事件监听 + 自定义命令 + 桌宠窗口操作）",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
+    "core:window:allow-set-position",
+    "core:window:allow-cursor-position",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-always-on-top"
+  ]
+}

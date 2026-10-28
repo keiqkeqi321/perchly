@@ -1,0 +1,198 @@
+/* ============================================================
+   Perchly 休息遮罩页 —— 全屏、半透明黑底、圆环倒计时
+   主题：micro = teal (#47848f) / long = 暖橙 (#c26843)
+   注意：刻意不用 backdrop-filter（省内存）
+   ============================================================ */
+
+:root {
+  --overlay-bg: rgba(20, 25, 30, 0.92);
+  --accent: #47848f;
+  --accent-soft: rgba(71, 132, 143, 0.35);
+  --ring-track: rgba(255, 255, 255, 0.12);
+  --text-main: #f2f5f6;
+  --text-dim: rgba(242, 245, 246, 0.55);
+  --btn-border: rgba(255, 255, 255, 0.28);
+}
+
+/* 长休息主题：暖橙 */
+body.theme-long {
+  --accent: #c26843;
+  --accent-soft: rgba(194, 104, 67, 0.4);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+    "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  /* overlay.rs 未开 transparent，webview 默认白底；先铺一层实色深底，
+     .overlay 的 rgba(20,25,30,0.92) 在其上合成，保证遮罩颜色稳定不偏亮 */
+  background: #14191e;
+  color: var(--text-main);
+  overflow: hidden;
+  /* 文字不可选中 */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* ============ 遮罩主体：半透明黑 + 入场淡入 300ms ============ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: var(--overlay-bg);
+  animation: overlay-fade-in 300ms ease both;
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ============ 类型徽标 ============ */
+
+.kind-badge {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  text-indent: 0.35em; /* 抵消末字间距，视觉居中 */
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  border-radius: 999px;
+  padding: 6px 22px;
+}
+
+/* ============ 圆环倒计时 ============ */
+
+.ring-wrap {
+  position: relative;
+  width: min(46vh, 320px);
+  aspect-ratio: 1;
+}
+
+.ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg); /* 12 点方向起步 */
+}
+
+.ring-track {
+  fill: none;
+  stroke: var(--ring-track);
+  stroke-width: 6;
+}
+
+.ring-progress {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+  /* dasharray/dashoffset 由 JS 设置（周长 = 2πr） */
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.countdown {
+  font-size: clamp(48px, 11vh, 72px);
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.countdown-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+}
+
+/* ============ 提示文案 ============ */
+
+.tip {
+  max-width: 60vw;
+  text-align: center;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text-main);
+  opacity: 0.92;
+}
+
+/* ============ 底部按钮 ============ */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--text-main);
+  background: transparent;
+  border: 1px solid var(--btn-border);
+  border-radius: 999px;
+  padding: 9px 30px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-skip {
+  border-color: var(--accent-soft);
+}
+
+.btn-skip:hover {
+  background: var(--accent-soft);
+}
+
+/* ============ 键盘提示 ============ */
+
+.kbd-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+}

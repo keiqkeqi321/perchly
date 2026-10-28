@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Perchly 设置</title>
+    <link rel="stylesheet" href="/src/styles/settings.css" />
+  </head>
+  <body>
+    <!-- ============ 顶部状态条：实时显示休息计划状态（监听 status 事件） ============ -->
+    <header class="status-bar">
+      <div class="status-line">
+        <div class="status-left">
+          <span id="status-phase" class="status-phase">正在获取状态…</span>
+          <span id="status-next" class="status-next"></span>
+        </div>
+        <div class="status-right">
+          <span id="save-hint" class="save-hint">已保存</span>
+          <span id="status-paused" class="status-paused">已暂停</span>
+          <span id="status-remaining" class="status-remaining">--:--</span>
+        </div>
+      </div>
+      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+    </header>
+
+    <main class="cards">
+      <!-- ============ 微休息 ============ -->
+      <section class="card">
+        <h2>微休息</h2>
+        <div class="row">
+          <label class="row-text" for="microbreak">
+            <span class="row-title">启用微休息</span>
+            <span class="row-desc">工作间隙的短暂停顿，放松眼睛</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="microbreak" data-setting="microbreak" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="microbreak">
+          <div class="row-text">
+            <span class="row-title">休息时长</span>
+            <span class="row-desc">每次微休息持续的秒数</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="3" max="300" step="1"
+              data-setting="microbreakDuration" data-unit="sec"
+              aria-label="微休息时长（秒）"
+            />
+            <span class="unit">秒</span>
+          </div>
+        </div>
+        <div class="row" data-dep="microbreak">
+          <div class="row-text">
+            <span class="row-title">间隔</span>
+            <span class="row-desc">两次微休息之间的工作时长</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="120" step="1"
+              data-setting="microbreakInterval" data-unit="min"
+              aria-label="微休息间隔（分钟）"
+            />
+            <span class="unit">分钟</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 长休息 ============ -->
+      <section class="card">
+        <h2>长休息</h2>
+        <div class="row">
+          <label class="row-text" for="break">
+            <span class="row-title">启用长休息</span>
+            <span class="row-desc">更长也更彻底的放松</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="break" data-setting="break" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="break">
+          <div class="row-text">
+            <span class="row-title">休息时长</span>
+            <span class="row-desc">每次长休息持续的分钟数</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="60" step="1"
+              data-setting="breakDuration" data-unit="min"
+              aria-label="长休息时长（分钟）"
+            />
+            <span class="unit">分钟</span>
+          </div>
+        </div>
+        <div class="row" data-dep="break">
+          <div class="row-text">
+            <span class="row-title">周期</span>
+            <span class="row-desc">每几个周期来一次长休息（其余为微休息）</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="10" step="1"
+              data-setting="breakInterval"
+              aria-label="长休息周期（个）"
+            />
+            <span class="unit">个周期</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 提醒方式（通知开关 + 提前量） ============ -->
+      <section class="card">
+        <h2>提醒方式</h2>
+        <div class="subgroup">微休息提醒</div>
+        <div class="row">
+          <label class="row-text" for="microbreakNotification">
+            <span class="row-title">提前提醒</span>
+            <span class="row-desc">休息开始前先温和地提醒你</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="microbreakNotification" data-setting="microbreakNotification" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="microbreakNotification">
+          <div class="row-text">
+            <span class="row-title">提前量</span>
+            <span class="row-desc">提醒先于休息弹出多久</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="300" step="1"
+              data-setting="microbreakNotificationInterval" data-unit="sec"
+              aria-label="微休息提前量（秒）"
+            />
+            <span class="unit">秒</span>
+          </div>
+        </div>
+        <div class="subgroup">长休息提醒</div>
+        <div class="row">
+          <label class="row-text" for="breakNotification">
+            <span class="row-title">提前提醒</span>
+            <span class="row-desc">长休息开始前先温和地提醒你</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="breakNotification" data-setting="breakNotification" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="breakNotification">
+          <div class="row-text">
+            <span class="row-title">提前量</span>
+            <span class="row-desc">提醒先于长休息弹出多久</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="300" step="1"
+              data-setting="breakNotificationInterval" data-unit="sec"
+              aria-label="长休息提前量（秒）"
+            />
+            <span class="unit">秒</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 推迟（开关 + 时长 + 次数上限 + 严格模式） ============ -->
+      <section class="card">
+        <h2>推迟</h2>
+        <div class="subgroup">微休息</div>
+        <div class="row">
+          <label class="row-text" for="microbreakPostpone">
+            <span class="row-title">允许推迟</span>
+            <span class="row-desc">临时有事时可以稍后休息</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="microbreakPostpone" data-setting="microbreakPostpone" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="microbreakPostpone">
+          <div class="row-text">
+            <span class="row-title">推迟时长</span>
+            <span class="row-desc">推迟后隔多久再次提醒</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="60" step="1"
+              data-setting="microbreakPostponeTime" data-unit="min"
+              aria-label="微休息推迟时长（分钟）"
+            />
+            <span class="unit">分钟</span>
+          </div>
+        </div>
+        <div class="row" data-dep="microbreakPostpone">
+          <div class="row-text">
+            <span class="row-title">次数上限</span>
+            <span class="row-desc">每个周期内最多可推迟的次数</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="0" max="10" step="1"
+              data-setting="microbreakPostponesLimit"
+              aria-label="微休息推迟次数上限（次）"
+            />
+            <span class="unit">次</span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-text" for="microbreakStrictMode">
+            <span class="row-title">严格模式</span>
+            <span class="row-desc">休息时不可推迟、不可跳过</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="microbreakStrictMode" data-setting="microbreakStrictMode" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="subgroup">长休息</div>
+        <div class="row">
+          <label class="row-text" for="breakPostpone">
+            <span class="row-title">允许推迟</span>
+            <span class="row-desc">临时有事时可以稍后休息</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="breakPostpone" data-setting="breakPostpone" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="breakPostpone">
+          <div class="row-text">
+            <span class="row-title">推迟时长</span>
+            <span class="row-desc">推迟后隔多久再次提醒</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="60" step="1"
+              data-setting="breakPostponeTime" data-unit="min"
+              aria-label="长休息推迟时长（分钟）"
+            />
+            <span class="unit">分钟</span>
+          </div>
+        </div>
+        <div class="row" data-dep="breakPostpone">
+          <div class="row-text">
+            <span class="row-title">次数上限</span>
+            <span class="row-desc">每个周期内最多可推迟的次数</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="0" max="10" step="1"
+              data-setting="breakPostponesLimit"
+              aria-label="长休息推迟次数上限（次）"
+            />
+            <span class="unit">次</span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-text" for="breakStrictMode">
+            <span class="row-title">严格模式</span>
+            <span class="row-desc">休息时不可推迟、不可跳过</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="breakStrictMode" data-setting="breakStrictMode" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ============ 自然休息 ============ -->
+      <section class="card">
+        <h2>自然休息</h2>
+        <div class="row">
+          <label class="row-text" for="naturalBreaks">
+            <span class="row-title">自然休息识别</span>
+            <span class="row-desc">检测到你长时间离开时，自动重置休息计划</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="naturalBreaks" data-setting="naturalBreaks" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row" data-dep="naturalBreaks">
+          <div class="row-text">
+            <span class="row-title">空闲重置时间</span>
+            <span class="row-desc">离开多久后视为已自然休息</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="60" step="1"
+              data-setting="naturalBreaksInactivityResetTime" data-unit="min"
+              aria-label="空闲重置时间（分钟）"
+            />
+            <span class="unit">分钟</span>
+          </div>
+        </div>
+        <div class="row" data-dep="naturalBreaks">
+          <div class="row-text">
+            <span class="row-title">检测间隔</span>
+            <span class="row-desc">多久检查一次键鼠空闲状态</span>
+          </div>
+          <div class="field">
+            <input
+              type="number" min="1" max="60" step="1"
+              data-setting="naturalBreaksCheckInterval" data-unit="sec"
+              aria-label="空闲检测间隔（秒）"
+            />
+            <span class="unit">秒</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 显示 ============ -->
+      <section class="card">
+        <h2>显示</h2>
+        <div class="row">
+          <label class="row-text" for="fullscreen">
+            <span class="row-title">全屏遮罩</span>
+            <span class="row-desc">休息时遮罩全屏覆盖（关闭则保留工作区边缘）</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="fullscreen" data-setting="fullscreen" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="row-text" for="allScreens">
+            <span class="row-title">覆盖所有屏幕</span>
+            <span class="row-desc">多显示器时在每块屏幕上都显示遮罩</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="allScreens" data-setting="allScreens" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="row-text" for="petEnabled">
+            <span class="row-title">桌宠</span>
+            <span class="row-desc">在桌面上显示 Perchly 小家伙</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="petEnabled" data-setting="petEnabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

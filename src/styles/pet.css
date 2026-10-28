@@ -1,0 +1,290 @@
+/* =========================================================
+   Perchly 桌宠样式（pet.html 专用）
+   结构：重置/布局 → 气泡 → Zzz → 呼吸 → 眼/眉 → 嘴 → 冠羽 → 翅膀/尾
+        → 基态整体动作(remind/happy) → 瞬时动作(blink/tilt/spin/stomp)
+        → 彩蛋派对帽 → 动效降级
+   说明：所有状态表现由 .pet-stage 上的 is-xxx（基态）/ act-xxx（瞬时）class 驱动。
+   ========================================================= */
+
+/* ---------- 重置与布局 ---------- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 220px;
+  height: 220px;
+  background: transparent; /* 窗口本身透明 */
+  overflow: hidden;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#pet-root { position: fixed; inset: 0; }
+.pet-stage { position: absolute; inset: 0; }
+
+/* 鹦鹉整体容器：歪头/跳跃/转圈都作用在这里（呼吸作用在 svg 上，避免 transform 冲突） */
+.pet-inner {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 92%; /* 以脚底为轴，动作更稳 */
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); /* 弹性回正 */
+  will-change: transform;
+}
+
+.pet-svg { display: block; width: 100%; height: 100%; pointer-events: none; }
+
+/* 命中区：页面里唯一接收鼠标的元素 */
+.pet-hit { pointer-events: auto; cursor: grab; }
+.pet-hit:active { cursor: grabbing; }
+
+/* ---------- 说话气泡（div + CSS 过渡显隐） ---------- */
+.bubble {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, 6px);
+  max-width: 196px;
+  width: max-content;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid #f3c64b;
+  border-radius: 12px;
+  color: #3a4350;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(31, 41, 55, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
+  z-index: 5;
+  pointer-events: none;
+}
+.bubble.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+/* 气泡小尾巴 */
+.bubble-tail {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border-right: 1.5px solid #f3c64b;
+  border-bottom: 1.5px solid #f3c64b;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* ---------- 打瞌睡的 Zzz（sleepy 基态下循环飘起） ---------- */
+.zzz {
+  position: absolute;
+  left: 63%;
+  top: 16%;
+  color: #8fa0b5;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.zzz:nth-child(1) { font-size: 15px; }
+.zzz:nth-child(2) { font-size: 12px; left: 70%; top: 10%; }
+.zzz:nth-child(3) { font-size: 10px; left: 76%; top: 5%; }
+.is-sleepy .zzz { animation: zzzFloat 2.6s ease-in-out infinite; }
+.is-sleepy .zzz:nth-child(2) { animation-delay: 0.85s; }
+.is-sleepy .zzz:nth-child(3) { animation-delay: 1.7s; }
+@keyframes zzzFloat {
+  0%   { opacity: 0; transform: translate(0, 4px) rotate(-8deg); }
+  30%  { opacity: 0.95; }
+  100% { opacity: 0; transform: translate(6px, -14px) rotate(10deg); }
+}
+
+/* ---------- 呼吸起伏（idle / sleepy 常驻，scale 1↔1.03） ---------- */
+.is-idle .pet-svg,
+.is-sleepy .pet-svg {
+  transform-origin: 50% 90%;
+  animation: breathe 2.8s ease-in-out infinite alternate;
+}
+@keyframes breathe {
+  from { transform: scale(1); }
+  to   { transform: scale(1.03); }
+}
+
+/* ---------- 眼睛 / 眼皮 / 皱眉 ---------- */
+/* 眼皮默认完全打开（上移一个眼径），眨眼/犯困时下移 */
+.eyelid {
+  transform: translateY(-13px);
+  transition: transform 0.1s ease-out;
+}
+.act-blink .eyelid { transform: translateY(0); }
+/* 犯困：眼皮半耷拉（慢过渡） */
+.is-sleepy .eyelid {
+  transform: translateY(-5px);
+  transition: transform 0.5s ease;
+}
+.is-sleepy.act-blink .eyelid {
+  transform: translateY(0);
+  transition-duration: 0.1s;
+}
+/* 提醒时瞳孔缩小一点，显出“吃惊” */
+.pupil,
+.glint {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.25s ease;
+}
+.is-remind .pupil { transform: scale(0.8); }
+
+/* 皱眉：默认隐藏，postponed（act-stomp）时出现 */
+.eyebrow { opacity: 0; transition: opacity 0.2s; }
+.act-stomp .eyebrow { opacity: 1; }
+
+/* ---------- 嘴（张嘴说话 / 打哈欠） ---------- */
+.mouth {
+  transform-origin: 104px 146px;
+  transform: scaleY(0.7);
+  transition: transform 0.22s ease;
+}
+.mouth-inner { opacity: 0; transition: opacity 0.18s; }
+/* 提醒 / 开心：微张嘴 */
+.is-remind .mouth,
+.is-happy .mouth { transform: scaleY(1.1); }
+.is-remind .mouth-inner,
+.is-happy .mouth-inner { opacity: 1; }
+/* 打哈欠：大幅张嘴再合上 */
+.act-yawn .mouth { animation: yawnOpen 1s ease-in-out; }
+.act-yawn .mouth-inner { opacity: 1; }
+@keyframes yawnOpen {
+  0%   { transform: scaleY(0.7); }
+  45%  { transform: scaleY(2.4) scaleX(1.15); }
+  60%  { transform: scaleY(2.2); }
+  100% { transform: scaleY(0.7); }
+}
+
+/* ---------- 冠羽（expressive crest） ---------- */
+/* 外层：竖起 / 耷拉的大姿态 */
+.crest-scale {
+  transform-origin: 104px 110px;
+  transition: transform 0.5s cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+/* 犯困：冠羽向后耷拉 */
+.is-sleepy .crest-scale { transform: rotate(26deg) scale(0.82, 0.68); }
+/* 兴奋（提醒/开心/派对）：冠羽高高竖起 */
+.is-remind .crest-scale,
+.is-happy .crest-scale,
+.act-party .crest-scale { transform: rotate(-10deg) scale(1.06, 1.2); }
+/* 生气（推迟休息）：冠羽压平 */
+.act-stomp .crest-scale { transform: rotate(20deg) scale(0.9, 0.7); }
+/* 内层：兴奋时的快速颤动 */
+.crest { transform-origin: 104px 110px; }
+.is-remind .crest,
+.is-happy .crest,
+.act-party .crest { animation: crestQuiver 0.3s ease-in-out infinite alternate; }
+@keyframes crestQuiver {
+  from { transform: rotate(-2deg); }
+  to   { transform: rotate(3deg) scaleY(1.05); }
+}
+
+/* ---------- 翅膀与尾巴 ---------- */
+.wing { transition: transform 0.3s ease; }
+.wing-r { transform-origin: 136px 132px; }
+.wing-l { transform-origin: 72px 132px; }
+/* 提醒：主翅（右）用力挥 */
+.is-remind .wing-r { animation: flapR 0.3s ease-in-out infinite alternate; }
+/* 开心/派对：双翅齐挥 */
+.is-happy .wing-r,
+.act-party .wing-r { animation: flapR 0.32s ease-in-out infinite alternate; }
+.is-happy .wing-l,
+.act-party .wing-l { animation: flapL 0.32s ease-in-out infinite alternate; }
+@keyframes flapR {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-48deg) translateY(-6px); }
+}
+@keyframes flapL {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(42deg) translateY(-6px); }
+}
+/* 尾巴：开心时轻摆 */
+.tail { transform-origin: 112px 176px; }
+.is-happy .tail,
+.act-party .tail { animation: tailWag 0.5s ease-in-out infinite alternate; }
+@keyframes tailWag {
+  from { transform: rotate(-4deg); }
+  to   { transform: rotate(5deg); }
+}
+
+/* ---------- 基态整体动作 ---------- */
+/* remind：跳起来催促（上下弹跳 + 轻微压扁拉伸） */
+.is-remind .pet-inner {
+  animation: jump 0.5s cubic-bezier(0.35, 0, 0.4, 1) infinite alternate;
+}
+@keyframes jump {
+  from { transform: translateY(0) scale(1); }
+  to   { transform: translateY(-13px) scale(1.02, 0.97); }
+}
+
+/* happy：左右摇摆 + 蹦跳的舞蹈 */
+.is-happy .pet-inner { animation: dance 0.62s ease-in-out infinite; }
+@keyframes dance {
+  0%   { transform: rotate(-7deg) translateY(0); }
+  25%  { transform: rotate(-2deg) translateY(-10px); }
+  50%  { transform: rotate(7deg) translateY(0); }
+  75%  { transform: rotate(2deg) translateY(-10px); }
+  100% { transform: rotate(-7deg) translateY(0); }
+}
+
+/* ---------- 瞬时动作（JS 定时加/删 class，注意排在基态之后以覆盖动画） ---------- */
+/* 歪头：走 transition 弹性 */
+.act-tilt .pet-inner { transform: rotate(13deg) translateY(1px); }
+
+/* 转圈一圈 */
+.act-spin .pet-inner { animation: spin 0.8s cubic-bezier(0.55, 0.05, 0.45, 0.95) 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 跺脚：快速下压两次（配合皱眉 class） */
+.act-stomp .pet-inner { animation: stomp 0.5s ease-in-out 2; }
+@keyframes stomp {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40%      { transform: translateY(3px) scale(1.05, 0.92); }
+  70%      { transform: translateY(0) scale(0.99, 1.01); }
+}
+
+/* ---------- 彩蛋：派对帽 ---------- */
+.party-hat {
+  opacity: 0;
+  transform: translateY(-30px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.act-party .party-hat {
+  animation: hatPop 0.6s cubic-bezier(0.2, 1.5, 0.45, 1) forwards;
+}
+.act-party .pet-inner { animation: dance 0.45s ease-in-out infinite; }
+@keyframes hatPop {
+  from { opacity: 0; transform: translateY(-34px) scale(0.5); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 帽顶绒球晃动 */
+.hat-pom { transform-origin: 104px 58px; }
+.act-party .hat-pom { animation: pomSwing 0.5s ease-in-out infinite alternate; }
+@keyframes pomSwing {
+  from { transform: rotate(-8deg); }
+  to   { transform: rotate(8deg); }
+}
+
+/* ---------- 动效降级（尊重系统设置） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .pet-svg,
+  .pet-inner,
+  .crest,
+  .wing,
+  .tail,
+  .mouth,
+  .eyelid,
+  .zzz,
+  .party-hat {
+    animation: none !important;
+  }
+}

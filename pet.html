@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Perchly 桌宠</title>
+  </head>
+  <body>
+    <!-- 桌宠根容器：全部 UI 由 TS 加 class 驱动，SVG 骨架静态写在下面，方便 CSS/动画定位 -->
+    <div id="pet-root">
+      <div class="pet-stage is-idle" id="pet-stage">
+        <!-- 打瞌睡的 Zzz（sleepy 基态下由 CSS 动画飘起） -->
+        <span class="zzz">Z</span><span class="zzz">z</span><span class="zzz">z</span>
+
+        <!-- 说话气泡（div + CSS 过渡显隐） -->
+        <div class="bubble" id="pet-bubble" role="status">
+          <span class="bubble-text" id="pet-bubble-text"></span>
+          <i class="bubble-tail"></i>
+        </div>
+
+        <div class="pet-inner">
+          <!--
+            Q 版玄凤鹦鹉：灰身、黄冠羽、橙红脸颊、长尾。纯 SVG 手绘，无外部资源。
+            画布 220x220；身体中心约 (104,152)，脚底 y≈204。
+            层次（先画在下）：阴影 → 尾羽 → 左翅 → 身体 → 右翅 → 脚 → 脸颊 → 冠羽 → 眉 → 眼 → 嘴 → 派对帽 → 命中区
+          -->
+          <svg id="pet-svg" class="pet-svg" viewBox="0 0 220 220" aria-hidden="true">
+            <defs>
+              <!-- 身体柔和渐变 -->
+              <radialGradient id="bodyGrad" cx="0.42" cy="0.3" r="0.95">
+                <stop offset="0" stop-color="#B7BFC9" />
+                <stop offset="0.55" stop-color="#9AA3AF" />
+                <stop offset="1" stop-color="#7E8894" />
+              </radialGradient>
+              <!-- 眼皮裁剪（左/右眼各自 clip，眼皮只在眼眶内活动） -->
+              <clipPath id="eyeClipL"><circle cx="88" cy="132" r="6.6" /></clipPath>
+              <clipPath id="eyeClipR"><circle cx="120" cy="132" r="6.6" /></clipPath>
+              <!-- 派对帽彩条裁剪 -->
+              <clipPath id="hatClip"><path d="M104,60 L90,106 L118,106 Z" /></clipPath>
+            </defs>
+
+            <!-- 脚下淡阴影 -->
+            <ellipse cx="104" cy="207" rx="34" ry="4.5" fill="rgba(31,41,55,0.14)" />
+
+            <!-- 长尾羽：黄羽最长在下，灰色叠上，根部被身体覆盖 -->
+            <g class="tail">
+              <path class="tail-feather tail-yellow" d="M112,176 C130,184 158,198 182,202 C172,208 146,203 124,191 C116,186 112,180 112,176 Z" fill="#FFC94D" />
+              <path class="tail-feather tail-mid" d="M110,170 C128,176 152,186 170,190 C160,195 136,191 118,183 C112,179 110,174 110,170 Z" fill="#8B94A0" />
+              <path class="tail-feather tail-short" d="M110,164 C124,168 142,174 156,178 C147,182 130,179 117,174 C111,171 110,167 110,164 Z" fill="#767F8B" />
+            </g>
+
+            <!-- 左翅（后层，颜色更深） -->
+            <path class="wing wing-l" d="M72,132 C50,140 44,168 62,184 C58,166 64,150 76,142 Z" fill="#6F7887" />
+
+            <!-- 身体（蛋形）+ 腹部亮斑 -->
+            <ellipse class="body" cx="104" cy="152" rx="40" ry="46" fill="url(#bodyGrad)" />
+            <ellipse class="belly" cx="104" cy="166" rx="24" ry="19" fill="#C9CFD8" opacity="0.5" />
+
+            <!-- 右翅（前层，主挥动翅膀） -->
+            <path class="wing wing-r" d="M136,132 C158,140 164,168 146,184 C150,166 144,150 132,142 Z" fill="#8892A0" />
+
+            <!-- 小爪子 -->
+            <g class="feet" stroke="#6B7280" stroke-width="2.2" stroke-linecap="round" fill="none">
+              <path d="M92,195 l-5,9 M92,195 l0,9 M92,195 l5,9" />
+              <path d="M116,195 l-5,9 M116,195 l0,9 M116,195 l5,9" />
+            </g>
+
+            <!-- 橙红脸颊（双层做渐层感） -->
+            <g class="cheeks">
+              <ellipse cx="80" cy="147" rx="9.5" ry="7" fill="#FF8A5C" opacity="0.9" />
+              <ellipse cx="80" cy="147" rx="6" ry="4.4" fill="#FF6B4A" opacity="0.85" />
+              <ellipse cx="128" cy="147" rx="9.5" ry="7" fill="#FF8A5C" opacity="0.9" />
+              <ellipse cx="128" cy="147" rx="6" ry="4.4" fill="#FF6B4A" opacity="0.85" />
+            </g>
+
+            <!-- 冠羽（expressive crest）：外层 crest-scale 控制竖起/耷拉，内层 crest 负责兴奋颤动 -->
+            <g class="crest-scale">
+              <g class="crest">
+                <path class="feather feather-f1" d="M100,110 C88,92 86,78 92,64 C100,78 102,95 104,110 Z" fill="#FFD35C" stroke="#E8A93A" stroke-width="1" />
+                <path class="feather feather-f2" d="M102,110 C93,86 95,68 102,50 C110,68 110,88 105,110 Z" fill="#FFD35C" stroke="#E8A93A" stroke-width="1" />
+                <path class="feather feather-f3" d="M104,110 C98,82 100,60 106,40 C113,62 113,86 107,110 Z" fill="#FFC94D" stroke="#E8A93A" stroke-width="1" />
+                <path class="feather feather-f4" d="M106,110 C112,88 114,70 121,54 C124,74 118,94 108,110 Z" fill="#FFD35C" stroke="#E8A93A" stroke-width="1" />
+                <path class="feather feather-f5" d="M108,110 C118,96 121,82 118,68 C110,80 107,96 105,110 Z" fill="#FFD35C" stroke="#E8A93A" stroke-width="1" />
+              </g>
+            </g>
+
+            <!-- 皱眉（postponed 时显示） -->
+            <path class="eyebrow eb-left" d="M81,121 Q88,117 95,126" fill="none" stroke="#4A525D" stroke-width="2.4" stroke-linecap="round" />
+            <path class="eyebrow eb-right" d="M113,126 Q120,117 127,121" fill="none" stroke="#4A525D" stroke-width="2.4" stroke-linecap="round" />
+
+            <!-- 眼睛：眼白 + 裁剪内（瞳孔/高光/眼皮） -->
+            <g class="eye eye-l">
+              <circle class="eyeball" cx="88" cy="132" r="6.4" fill="#FFFFFF" />
+              <g clip-path="url(#eyeClipL)">
+                <circle class="pupil" cx="88" cy="132" r="3.1" fill="#2A2E36" />
+                <circle class="glint" cx="89.6" cy="130.4" r="1.2" fill="#FFFFFF" />
+                <circle class="eyelid" cx="88" cy="132" r="6.4" fill="#8A94A1" />
+              </g>
+            </g>
+            <g class="eye eye-r">
+              <circle class="eyeball" cx="120" cy="132" r="6.4" fill="#FFFFFF" />
+              <g clip-path="url(#eyeClipR)">
+                <circle class="pupil" cx="120" cy="132" r="3.1" fill="#2A2E36" />
+                <circle class="glint" cx="121.6" cy="130.4" r="1.2" fill="#FFFFFF" />
+                <circle class="eyelid" cx="120" cy="132" r="6.4" fill="#8A94A1" />
+              </g>
+            </g>
+
+            <!-- 嘴：上喙 + 张嘴露出的口腔 + 下喙；yawn 时整组 scaleY 拉伸 -->
+            <g class="mouth">
+              <path class="beak-top" d="M97,144 Q104,137 111,144 Q108,154 104,155 Q100,154 97,144 Z" fill="#5B6470" />
+              <ellipse class="mouth-inner" cx="104" cy="152" rx="5" ry="3.4" fill="#D9534F" />
+              <path class="beak-bottom" d="M99,152 Q104,159 109,152 Q104,156.5 99,152 Z" fill="#4A525D" />
+            </g>
+
+            <!-- 彩蛋：派对帽（默认隐藏，party 时弹落戴上） -->
+            <g class="party-hat">
+              <g clip-path="url(#hatClip)">
+                <rect x="86" y="60" width="36" height="46" fill="#FF6B6B" />
+                <rect x="86" y="66" width="36" height="7" fill="#4ECDC4" />
+                <rect x="86" y="78" width="36" height="9" fill="#FFD35C" />
+                <rect x="86" y="92" width="36" height="9" fill="#4ECDC4" />
+              </g>
+              <circle class="hat-pom" cx="104" cy="58" r="5.5" fill="#FFD35C" stroke="#E8A93A" stroke-width="1" />
+            </g>
+
+            <!-- 命中区：鼠标穿透判定的身体范围，透明填充保证可命中 -->
+            <ellipse class="pet-hit" cx="104" cy="152" rx="60" ry="64" fill="transparent" />
+          </svg>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/pet.ts"></script>
+  </body>
+</html>

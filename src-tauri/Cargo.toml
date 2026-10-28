@@ -1,0 +1,34 @@
+[package]
+name = "perchly"
+version = "0.1.0"
+description = "Break reminder with a living desktop pet"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "perchly_lib"
+# 桌面版无需 cdylib（GNU 工具链导出符号会爆 ordinal 上限）；mobile 构建时再加回
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.58", features = [
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Gdi",
+  "Win32_System_SystemInformation",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
