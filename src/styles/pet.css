@@ -301,11 +301,10 @@ html, body {
   image-rendering: auto;
 }
 
-/* 直显模式：视频本体圆角贴纸观感 */
+/* 直显模式：视频本体圆角（无阴影，贴纸感更干净） */
 video.netease-raw {
   width: 200px;
   height: 200px;
   border-radius: 24px;
   object-fit: cover;
-  box-shadow: 0 6px 18px rgba(20, 25, 30, 0.35);
 }
