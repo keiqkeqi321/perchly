@@ -10,6 +10,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 #[derive(Debug)]
+#[allow(dead_code)] // NextBreak/Shutdown 为 IPC 与优雅退出预留
 pub enum Cmd {
     /// 重新规划下一个周期（设置变更/启动）
     NextBreak,

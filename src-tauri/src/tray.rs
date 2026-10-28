@@ -16,7 +16,7 @@ pub fn set_tooltip(app: &AppHandle, text: &str) {
 }
 
 /// 构建完整菜单（皮肤勾选态按当前设置渲染）
-fn build_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri::Wry> {
+fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri::Wry> {
     let s = crate::settings::current(app);
     let skin = s.pet_skin;
 
