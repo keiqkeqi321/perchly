@@ -82,23 +82,31 @@ export class PetPackEngine {
 
   private async playBody(file: string, state: "idle" | "interact" | "fly"): Promise<boolean> {
     if (this.disposed) return false;
-    this.bodyBusy = true;
-    // 无缝换片：新片预载到第一帧可呈现，再同帧交接（旧隐藏→新显示→旧移除）
-    const oldPlayer = this.bodyPlayer;
-    oldPlayer?.setHidden(true);
+    // 代际令牌：并发换片时只允许最新一代提交，被顶掉的一代自清理（不留孤儿视频）
+    const gen = ++this.bodyGen;
     const p = new NeteasePetPlayer(this.base + file);
+    p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
     const ok = await p.attach(this.bodyStage, { waitForFrame: true });
-    this.bodyBusy = false;
     if (!ok) {
-      oldPlayer?.setHidden(false); // 新片失败：旧片退场回显
+      p.destroy();
+      if (gen === this.bodyGen) this.bodyBusy = false;
       return false;
     }
+    if (gen !== this.bodyGen || this.disposed) {
+      p.destroy(); // 已被更新的换片顶掉：自杀，绝不上屏
+      return false;
+    }
+    // 同帧交接：新片亮相 → 旧片移除
+    p.setHidden(false);
+    this.bodyPlayer?.destroy();
     this.bodyPlayer = p;
     this.currentBodyFile = file;
     this.currentState = state;
-    oldPlayer?.destroy();
+    this.bodyBusy = false;
     return true;
   }
+
+  private bodyGen = 0;
 
   private currentBodyFile = "";
   private currentState: "idle" | "interact" | "fly" = "idle";

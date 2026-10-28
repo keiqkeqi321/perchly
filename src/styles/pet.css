@@ -320,8 +320,13 @@ video.netease-raw {
 .petpack-bg {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   pointer-events: none;
+}
+/* 视频绝对定位堆叠：同层多个视频（换片交接瞬间）重叠而不并排推挤 */
+.petpack-body video,
+.petpack-bg video {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
