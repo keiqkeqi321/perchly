@@ -33,17 +33,17 @@ const COMBO_WINDOW_MS = 2500;
 function main(): void {
   const dom = getPetDom();
 
-  /* ---------- 网易云资源兼容模式 + 皮肤热切换 ----------
+  /* ---------- 宠物包资源模式 + 皮肤热切换 ----------
    * 设置来源（优先级）：
-   *   1. URL 参数 ?netease=<id|random|all>（调试用，覆盖设置）
+   *   1. URL 参数 ?pack=<id>（调试用，覆盖设置）
    *   2. 设置项 petSkin（托盘/设置页切换，事件 pet-skin-changed 热切换）
-   * 皮肤值：svg=自绘鹦鹉；netease=网易云直显（圆角贴纸）
+   * 皮肤值：svg=自绘鹦鹉；pack=宠物包视频直显（圆角贴纸）
    */
   const params = new URLSearchParams(location.search);
-  const urlSkin = params.get("netease");
+  const urlSkin = params.get("pack");
   if (urlSkin) {
-    // 调试参数：?netease=1 强制宠物包皮肤（不支持单条指定，改用 triggerRules）
-    void applySkin("netease");
+    // 调试参数：?pack=1 强制宠物包皮肤
+    void applySkin("pack");
   } else {
     // 初始皮肤：读设置，失败走 SVG
     void invoke<{ petSkin?: string }>("get_settings")
@@ -159,17 +159,17 @@ function main(): void {
 /** 当前皮肤（点击行为分流用） */
 let currentSkin = "svg";
 
-/** 宠物包引擎（netease 皮肤时活动） */
+/** 宠物包引擎（pack 皮肤时活动） */
 let packEngine: PetPackEngine | null = null;
 let packStage: HTMLElement | null = null;
 let applySeq = 0; // 防竞态：只允许最后一次 applySkin 生效
-const DEFAULT_PACK = "netease-cockatiel";
+const DEFAULT_PACK = "cockatiel";
 
 interface SkinOpts {
   pack?: string;
 }
 
-/** 切换桌宠皮肤。svg=自绘；netease=宠物包双层引擎。 */
+/** 切换桌宠皮肤。svg=自绘；pack=宠物包双层引擎。 */
 async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
   const seq = ++applySeq;
   const dom = getPetDom();
@@ -195,7 +195,7 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     disposePack(dom); // 清旧层
 
     const stage = document.createElement("div");
-    stage.className = "netease-stage";
+    stage.className = "pack-stage";
     // 挂 #pet-root（与 .pet-stage 平级）：脱离 .pet-inner 形变容器——
     // SVG 状态机的 act-tilt/跳跃等 transform 作用于 .pet-inner，视频在里面会被带着形变
     dom.root.appendChild(stage);

@@ -4,6 +4,6 @@ src-tauri/target
 src-tauri/gen
 *.local
 .DS_Store
-docs/netease_pet_assets/*.webm
-docs/netease_pet_assets/preview*.gif
-public/assets/pets/netease/*.webm
+docs/pet_assets_research/*.webm
+docs/pet_assets_research/preview*.gif
+public/assets/pets/imported/*.webm

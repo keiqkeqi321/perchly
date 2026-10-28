@@ -13,7 +13,7 @@
  *   "drag"                     → 拖动中（固定飞翔 + 光晕）
  */
 
-import { NeteasePetPlayer } from "./netease";
+import { PetVideoPlayer } from "./video";
 
 export interface TriggerRule {
   when: string;
@@ -45,8 +45,8 @@ export class PetPackEngine {
   private base: string;
   private bodyStage: HTMLElement;
   private bgStage: HTMLElement;
-  private bodyPlayer: NeteasePetPlayer | null = null;
-  private bgPlayer: NeteasePetPlayer | null = null;
+  private bodyPlayer: PetVideoPlayer | null = null;
+  private bgPlayer: PetVideoPlayer | null = null;
   private idleTimer = 0;
   private idleQueue: string[] = [];
   private disposed = false;
@@ -97,7 +97,7 @@ export class PetPackEngine {
   private async prewarmBody(file: string): Promise<void> {
     if (this.warmBody.has(file)) return;
     this.warmBody.set(file, "loading");
-    const p = new NeteasePetPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.base + file);
     p.setHidden(true);
     const ok = await p.attach(this.bodyStage, { waitForFrame: true });
     if (!ok) { p.destroy(); this.warmBody.delete(file); return; }
@@ -110,7 +110,7 @@ export class PetPackEngine {
   /** 预热一个背景视频（隐藏挂载到 bgStage） */
   private async prewarmBg(file: string): Promise<void> {
     if (this.warmBg.has(file)) return;
-    const p = new NeteasePetPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.base + file);
     p.setHidden(true);
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) { p.destroy(); return; }
@@ -118,8 +118,8 @@ export class PetPackEngine {
     this.warmBg.set(file, p);
   }
 
-  private warmBody = new Map<string, NeteasePetPlayer | "loading">();
-  private warmBg = new Map<string, NeteasePetPlayer>();
+  private warmBody = new Map<string, PetVideoPlayer | "loading">();
+  private warmBg = new Map<string, PetVideoPlayer>();
 
   /* ---------------- 主体层 ---------------- */
 
@@ -130,7 +130,7 @@ export class PetPackEngine {
 
     // 优先领养预热视频（首帧已就绪，零延迟上屏）
     const warm = this.warmBody.get(file);
-    if (warm instanceof NeteasePetPlayer) {
+    if (warm instanceof PetVideoPlayer) {
       this.warmBody.delete(file); // 出池即领养
       warm.setHidden(false);
       warm.play();
@@ -141,7 +141,7 @@ export class PetPackEngine {
       return true;
     }
 
-    const p = new NeteasePetPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.base + file);
     p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
     const ok = await p.attach(this.bodyStage, { waitForFrame: true });
     if (!ok) {
@@ -289,7 +289,7 @@ export class PetPackEngine {
       this.bgPlayer = warm;
       return;
     }
-    const p = new NeteasePetPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.base + file);
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) return;
     this.bgPlayer?.destroy();
@@ -312,7 +312,7 @@ export class PetPackEngine {
     window.clearTimeout(this.pendingReturnTimer);
     this.bodyPlayer?.destroy();
     this.bgPlayer?.destroy();
-    for (const p of this.warmBody.values()) if (p instanceof NeteasePetPlayer) p.destroy();
+    for (const p of this.warmBody.values()) if (p instanceof PetVideoPlayer) p.destroy();
     for (const p of this.warmBg.values()) p.destroy();
     this.warmBody.clear();
     this.warmBg.clear();

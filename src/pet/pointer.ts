@@ -32,7 +32,7 @@ const HOVER_POLL_MS = 250;
 /** 身体命中椭圆（SVG viewBox 坐标，与 pet.html 中 .pet-hit 保持一致） */
 const HIT_ELLIPSE = { cx: 104, cy: 152, rx: 60, ry: 64 } as const;
 
-/** 当前命中区形状：ellipse=SVG 鹦鹉身体；rect=视频全窗口（网易云皮肤 200x200 居中） */
+/** 当前命中区形状：ellipse=SVG 鹦鹉身体；rect=视频全窗口（宠物包皮肤 200x200 居中） */
 type HitShape = "ellipse" | "rect";
 let hitShape: HitShape = "ellipse";
 
@@ -83,7 +83,7 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
     return { x: (cursor.x - origin.x) / dpr, y: (cursor.y - origin.y) / dpr };
   }
 
-  /** 逻辑坐标是否在命中区内（ellipse=SVG 身体椭圆；rect=全窗口，网易云视频模式） */
+  /** 逻辑坐标是否在命中区内（ellipse=SVG 身体椭圆；rect=全窗口，宠物包视频模式） */
   function insideBodyEllipse(p: { x: number; y: number }): boolean {
     if (hitShape === "rect") {
       return p.x >= 0 && p.x <= 220 && p.y >= 0 && p.y <= 220;
@@ -216,7 +216,7 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
   }
 
   // pointerdown：记录起点；等 move 超阈值再 startDragging，< 5px 仍算点击
-  // 双宿主：SVG 椭圆 + 视频矩形层（网易云皮肤时椭圆在 display:none 的 SVG 里收不到事件）
+  // 双宿主：SVG 椭圆 + 视频矩形层（宠物包皮肤时 SVG 已移出 DOM，椭圆收不到事件）
   const hitHosts: (Element & GlobalEventHandlers)[] = [dom.hit, dom.videoHit];
   for (const host of hitHosts) {
     host.addEventListener("pointerdown", (e: PointerEvent) => {

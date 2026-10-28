@@ -13,11 +13,11 @@ export interface PetDom {
   bubbleText: HTMLElement;
   /** 鹦鹉身体命中区（透明椭圆，接收指针事件 + 用于穿透判定） */
   hit: SVGEllipseElement;
-  /** 视频模式矩形命中层（220x220 全窗口，网易云皮肤时显示） */
+  /** 视频模式矩形命中层（220x220 全窗口，宠物包皮肤时显示） */
   videoHit: HTMLElement;
-  /** SVG 鹦鹉本体（网易视频模式时隐藏） */
+  /** SVG 鹦鹉本体（视频模式时移出 DOM） */
   svg: SVGSVGElement;
-  /** SVG 所在的内层容器（网易 stage 的插入位） */
+  /** SVG 所在的内层容器（形变容器：歪头/跳跃 transform 作用于此） */
   inner: HTMLElement;
 }
 

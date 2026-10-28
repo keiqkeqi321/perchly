@@ -285,9 +285,9 @@ html, body {
   }
 }
 
-/* ============ 网易云 WebM 直显模式 ============ */
+/* ============ 宠物包 WebM 直显模式（视频皮肤） ============ */
 /* 视频容器：铺满窗口、居中、不拦截事件（命中仍走 .pet-hit） */
-.netease-stage {
+.pack-stage {
   position: absolute;
   inset: 0;
   display: flex;
@@ -297,14 +297,14 @@ html, body {
 }
 
 /* 视频本体圆角（无阴影，贴纸感干净） */
-video.netease-raw {
+video.pack-video {
   width: 200px;
   height: 200px;
   border-radius: 24px;
   object-fit: cover;
 }
 
-/* 视频模式矩形命中层：全窗口、透明、可交互（网易云皮肤时显示） */
+/* 视频模式矩形命中层：全窗口、透明、可交互（宠物包皮肤时显示） */
 #pet-video-hit {
   position: fixed;
   inset: 0;
@@ -315,7 +315,7 @@ video.netease-raw {
   cursor: grabbing;
 }
 
-/* 宠物包引擎：双层舞台（bg 在下，body 在上，都在 .netease-stage 内） */
+/* 宠物包引擎：双层舞台（bg 在下，body 在上，都在 .pack-stage 内） */
 .petpack-body,
 .petpack-bg {
   position: absolute;

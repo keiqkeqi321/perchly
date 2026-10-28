@@ -63,4 +63,4 @@ idle(轻摆/眨眼) ←默认
 ## 参考资产
 
 - Stretchly 源码：`~/Projects/stretchly`（学习笔记见 docs/STRETCHLY_NOTES.md）
-- 设计参考：网易云桌面玄虎皮鹦鹉（截图见对话，交互节奏参考）
+- 设计参考：玄凤鹦鹉桌面宠物（交互节奏参考）

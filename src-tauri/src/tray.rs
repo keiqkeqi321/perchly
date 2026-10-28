@@ -36,13 +36,13 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
         app, "skin_svg", "SVG 鹦鹉（默认）",
         true, skin == PetSkin::Svg, None::<&str>,
     ).unwrap();
-    let sk_netease = CheckMenuItem::with_id(
-        app, "skin_netease", "网易云动作",
-        !s.netease_missing, skin == PetSkin::Netease, None::<&str>,
+    let sk_pack = CheckMenuItem::with_id(
+        app, "skin_pack", "宠物包动画",
+        !s.pack_missing, skin == PetSkin::Pack, None::<&str>,
     ).unwrap();
     let skin_menu = Submenu::with_id_and_items(
         app, "pet_skin", "桌宠皮肤", true,
-        &[&sk_svg, &sk_netease],
+        &[&sk_svg, &sk_pack],
     ).unwrap();
 
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>).unwrap();
@@ -105,10 +105,10 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
                 let _ = w.set_focus();
             }
         }
-        "skin_svg" | "skin_netease" => {
+        "skin_svg" | "skin_pack" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选
-            let skin = if id == "skin_svg" { PetSkin::Svg } else { PetSkin::Netease };
-            // 重复点同一皮肤跳过：避免 netease→netease 重入（中间会短暂回显 SVG 闪一帧）
+            let skin = if id == "skin_svg" { PetSkin::Svg } else { PetSkin::Pack };
+            // 重复点同一皮肤跳过：避免 pack→pack 重入（中间会短暂回显 SVG 闪一帧）
             if crate::settings::current(app).pet_skin == skin {
                 return;
             }
