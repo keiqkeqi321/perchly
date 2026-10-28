@@ -8,8 +8,9 @@
 /** 基态：决定鹦鹉整体表现（挂 class: is-xxx） */
 export type BaseState = "idle" | "sleepy" | "remind" | "happy";
 
-/** 瞬时动作：短暂叠加在基态之上（挂 class: act-xxx） */
-export type TransientAction = "blink" | "tilt" | "yawn" | "spin" | "stomp" | "party";
+/** 瞬时动作：短暂叠加在基态之上（挂 class: act-xxx）。
+ *  注：spin（根节点整周旋转）已随"去除根节点旋转动画"移除。 */
+export type TransientAction = "blink" | "tilt" | "yawn" | "stomp" | "party";
 
 /** "status" 事件 payload */
 export interface StatusPayload {

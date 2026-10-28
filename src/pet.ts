@@ -57,7 +57,7 @@ function main(): void {
   // idle 小动作先跑起来（初始基态是 idle，状态机构造时不会触发 hooks）
   tricks.scheduleIdleFidgets();
 
-  /* ---------- 点击反应：歪头 / 转圈 / 说话 + 5 连击彩蛋 ---------- */
+  /* ---------- 点击反应：歪头 / 说话 + 5 连击彩蛋 ---------- */
   let combo = 0;
   let comboTimer = 0;
 
@@ -78,12 +78,9 @@ function main(): void {
       return;
     }
 
-    // 常规反应：歪头 / 转圈 / 说话 三选一（说话时配歪头，更生动）
-    const roll = Math.random();
-    if (roll < 0.4) {
+    // 常规反应：歪头 / 说话二选一（原转圈 spin 属根节点旋转动画，已移除）
+    if (Math.random() < 0.4) {
       tricks.playAction("tilt");
-    } else if (roll < 0.6) {
-      tricks.playAction("spin");
     } else {
       tricks.playAction("tilt");
       tricks.showBubble(pick(CLICK_QUOTES));

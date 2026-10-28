@@ -4,7 +4,7 @@
  * 负责：
  *  - idle 随机小动作：每 3~6s 随机眨眼 / 偶尔歪头
  *  - sleepy 定时打哈欠
- *  - 点击反应（歪头/转圈/说话）由 pointer 层调用 playAction()
+ *  - 点击反应（歪头/说话）由 pointer 层调用 playAction()
  *  - 气泡：show(text, duration)，到时自动淡出；同一时间只有一条
  *
  * 实现要点：不跑 rAF，全部 setTimeout；连续动作若同名则先取消旧的再放新的。
@@ -18,7 +18,6 @@ const ACTION_MS: Readonly<Record<TransientAction, number>> = {
   blink: 130,
   tilt: 900,
   yawn: 1000,
-  spin: 800,
   stomp: 1100, // 动画播 2 遍
   party: 6000, // 彩蛋派对帽驻留久一点
 };

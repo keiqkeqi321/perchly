@@ -1,7 +1,7 @@
 /* =========================================================
    Perchly 桌宠样式（pet.html 专用）
    结构：重置/布局 → 气泡 → Zzz → 呼吸 → 眼/眉 → 嘴 → 冠羽 → 翅膀/尾
-        → 基态整体动作(remind/happy) → 瞬时动作(blink/tilt/spin/stomp)
+        → 基态整体动作(remind/happy) → 瞬时动作(blink/tilt/stomp)
         → 彩蛋派对帽 → 动效降级
    说明：所有状态表现由 .pet-stage 上的 is-xxx（基态）/ act-xxx（瞬时）class 驱动。
    ========================================================= */
@@ -22,7 +22,7 @@ html, body {
 #pet-root { position: fixed; inset: 0; }
 .pet-stage { position: absolute; inset: 0; }
 
-/* 鹦鹉整体容器：歪头/跳跃/转圈都作用在这里（呼吸作用在 svg 上，避免 transform 冲突） */
+/* 鹦鹉整体容器：跳跃/蹦跳等整体动作作用在这里（呼吸作用在 svg 上，避免 transform 冲突） */
 .pet-inner {
   position: absolute;
   inset: 0;
@@ -226,23 +226,19 @@ html, body {
   to   { transform: translateY(-13px) scale(1.02, 0.97); }
 }
 
-/* happy：左右摇摆 + 蹦跳的舞蹈 */
+/* happy：蹦跳的舞蹈（原含左右摇摆的根节点旋转，已按要求去除） */
 .is-happy .pet-inner { animation: dance 0.62s ease-in-out infinite; }
 @keyframes dance {
-  0%   { transform: rotate(-7deg) translateY(0); }
-  25%  { transform: rotate(-2deg) translateY(-10px); }
-  50%  { transform: rotate(7deg) translateY(0); }
-  75%  { transform: rotate(2deg) translateY(-10px); }
-  100% { transform: rotate(-7deg) translateY(0); }
+  0%   { transform: translateY(0); }
+  25%  { transform: translateY(-10px); }
+  50%  { transform: translateY(0); }
+  75%  { transform: translateY(-10px); }
+  100% { transform: translateY(0); }
 }
 
 /* ---------- 瞬时动作（JS 定时加/删 class，注意排在基态之后以覆盖动画） ---------- */
-/* 歪头：走 transition 弹性 */
-.act-tilt .pet-inner { transform: rotate(13deg) translateY(1px); }
-
-/* 转圈一圈 */
-.act-spin .pet-inner { animation: spin 0.8s cubic-bezier(0.55, 0.05, 0.45, 0.95) 1; }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* 歪头：原为根节点旋转(rotate 13deg)，按要求去除旋转，改为果冻压扁弹性 */
+.act-tilt .pet-inner { transform: scale(1.06, 0.94) translateY(1px); }
 
 /* 跺脚：快速下压两次（配合皱眉 class） */
 .act-stomp .pet-inner { animation: stomp 0.5s ease-in-out 2; }
