@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """桌宠动画资源导入工具（Python 版，bash 版 ffprobe 启动过慢已弃用）
 用法: python scripts/import_pet_assets.py <源目录> [目标目录]
-  目标目录默认: public/assets/pets/imported
+  目标目录默认: raw-assets/imported
 识别源目录 .dat 中实为 WebM(VP9, 魔数 1A45DFA3) 的文件 → 复制改名 .webm → 生成 manifest.json
 """
 import os, sys, json, shutil, subprocess
@@ -13,7 +13,7 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("用法: python scripts/import_pet_assets.py <源目录> [目标目录]")
     src = sys.argv[1]
-    dst = sys.argv[2] if len(sys.argv) > 2 else "public/assets/pets/imported"
+    dst = sys.argv[2] if len(sys.argv) > 2 else "raw-assets/imported"
     ffprobe = os.environ.get("FFPROBE", FFPROBE_DEFAULT)
     if not os.path.isdir(src):
         sys.exit(f"[失败] 源目录不存在: {src}")
