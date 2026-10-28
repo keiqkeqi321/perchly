@@ -158,13 +158,20 @@ impl SettingsStore {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        // 网易资源可用性探测（打包后 dist/assets/pets/netease/manifest.json 存在即可用）；
-        // dev 模式下 vite 从 public/ 提供，同样存在
-        settings.netease_missing = app
-            .path()
-            .resolve("assets/pets/netease/manifest.json", tauri::path::BaseDirectory::Resource)
-            .map(|p| !p.exists())
-            .unwrap_or(true);
+        // 网易资源可用性探测（运行时，不落盘）
+        // dev：vite 从 public/ 提供资源，Resource 目录(target/debug)里没有 → 探测项目 public/
+        // release：探 Resource 目录（打包时 dist 资源打进安装包）
+        let manifest_exists = if cfg!(debug_assertions) {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../public/assets/pets/netease/manifest.json")
+                .exists()
+        } else {
+            app.path()
+                .resolve("assets/pets/netease/manifest.json", tauri::path::BaseDirectory::Resource)
+                .map(|p| p.exists())
+                .unwrap_or(false)
+        };
+        settings.netease_missing = !manifest_exists;
         Self { path, settings }
     }
 
@@ -186,7 +193,9 @@ impl SettingsStore {
                     cur_map.insert(k, v);
                 }
             }
+            let netease_missing = self.settings.netease_missing; // serde(skip) 字段往返会丢，手动保留
             self.settings = serde_json::from_value(cur).map_err(|e| e.to_string())?;
+            self.settings.netease_missing = netease_missing;
             self.save()
         } else {
             Err("patch must be an object".into())
