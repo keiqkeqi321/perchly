@@ -68,6 +68,8 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
 pub fn build(app: &AppHandle, tx: std::sync::mpsc::Sender<Cmd>) {
     let menu = build_menu(app, &tx);
     let _ = TrayIconBuilder::with_id("perchly")
+        .icon(tauri::include_image!("icons/32x32.png"))
+        .tooltip("Perchly")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| {
