@@ -28,6 +28,9 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
     let pause_forever = MenuItem::with_id(app, "pause_forever", "暂停（无限期）", true, None::<&str>).unwrap();
     let resume = MenuItem::with_id(app, "resume", "恢复", true, None::<&str>).unwrap();
 
+    // —— 桌宠显隐 ——
+    let show_pet = MenuItem::with_id(app, "show_pet", "显示桌宠", true, None::<&str>).unwrap();
+
     // —— 桌宠皮肤子菜单（勾选单选）——
     let sk_svg = CheckMenuItem::with_id(
         app, "skin_svg", "SVG 鹦鹉（默认）",
@@ -52,6 +55,7 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
             &PredefinedMenuItem::separator(app).unwrap(),
             &pause_1h, &pause_forever, &resume,
             &PredefinedMenuItem::separator(app).unwrap(),
+            &show_pet,
             &skin_menu,
             &PredefinedMenuItem::separator(app).unwrap(),
             &settings, &quit,
@@ -94,6 +98,13 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
         "pause_1h" => { let _ = tx.send(Cmd::Pause(Some(3_600_000))); }
         "pause_forever" => { let _ = tx.send(Cmd::Pause(None)); }
         "resume" => { let _ = tx.send(Cmd::Resume); }
+        "show_pet" => {
+            // 双击隐藏 / petEnabled=false 后的重新打开入口
+            if let Some(w) = app.get_webview_window("pet") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
         "skin_svg" | "skin_netease" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选
             let skin = if id == "skin_svg" { PetSkin::Svg } else { PetSkin::Netease };
