@@ -69,14 +69,57 @@ export class PetPackEngine {
     root.appendChild(this.bodyStage);
   }
 
-  /** 启动：进入待机轮播 */
+  /** 启动：进入待机轮播 + 预热关键资源（fly/背景，首帧就绪待命） */
   async start(): Promise<boolean> {
     if (!this.pack.assets.idle.length) return false;
-    // 预挂背景视频元素（隐藏），首次触发规则时才播
     const ok = await this.playBody(this.pickIdle(), "idle");
     this.scheduleIdleRotation();
+    void this.prewarm(); // 不阻塞启动
     return ok;
   }
+
+  /** 资源预热：fly 与背景视频提前加载到首帧（隐藏挂载），触发时零延迟切换 */
+  private async prewarm(): Promise<void> {
+    // fly：热源（拖动触发最突然）
+    for (const file of this.pack.assets.fly.slice(0, 1)) {
+      await this.prewarmBody(file);
+    }
+    // 背景：规则引用的都热
+    for (const key of new Set(
+      this.pack.triggerRules.map((r) => r.bg).filter((k): k is string => !!k),
+    )) {
+      const file = this.pack.backgrounds[key];
+      if (file) await this.prewarmBg(file);
+    }
+  }
+
+  /** 预热一个主体视频（隐藏挂载到 bodyStage，不入 bodyPlayer 管辖） */
+  private async prewarmBody(file: string): Promise<void> {
+    if (this.warmBody.has(file)) return;
+    this.warmBody.set(file, "loading");
+    const p = new NeteasePetPlayer(this.base + file);
+    p.setHidden(true);
+    const ok = await p.attach(this.bodyStage, { waitForFrame: true });
+    if (!ok) { p.destroy(); this.warmBody.delete(file); return; }
+    p.pause();
+    // 加载期间被领养/销毁的边界：池里还是 "loading" 才入池，否则自毁
+    if (this.disposed) { p.destroy(); return; }
+    this.warmBody.set(file, p);
+  }
+
+  /** 预热一个背景视频（隐藏挂载到 bgStage） */
+  private async prewarmBg(file: string): Promise<void> {
+    if (this.warmBg.has(file)) return;
+    const p = new NeteasePetPlayer(this.base + file);
+    p.setHidden(true);
+    const ok = await p.attach(this.bgStage, { waitForFrame: true });
+    if (!ok) { p.destroy(); return; }
+    p.pause();
+    this.warmBg.set(file, p);
+  }
+
+  private warmBody = new Map<string, NeteasePetPlayer | "loading">();
+  private warmBg = new Map<string, NeteasePetPlayer>();
 
   /* ---------------- 主体层 ---------------- */
 
@@ -84,12 +127,25 @@ export class PetPackEngine {
     if (this.disposed) return false;
     // 代际令牌：并发换片时只允许最新一代提交，被顶掉的一代自清理（不留孤儿视频）
     const gen = ++this.bodyGen;
+
+    // 优先领养预热视频（首帧已就绪，零延迟上屏）
+    const warm = this.warmBody.get(file);
+    if (warm instanceof NeteasePetPlayer) {
+      this.warmBody.delete(file); // 出池即领养
+      warm.setHidden(false);
+      warm.play();
+      this.bodyPlayer?.destroy();
+      this.bodyPlayer = warm;
+      this.currentBodyFile = file;
+      this.currentState = state;
+      return true;
+    }
+
     const p = new NeteasePetPlayer(this.base + file);
     p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
     const ok = await p.attach(this.bodyStage, { waitForFrame: true });
     if (!ok) {
       p.destroy();
-      if (gen === this.bodyGen) this.bodyBusy = false;
       return false;
     }
     if (gen !== this.bodyGen || this.disposed) {
@@ -102,7 +158,6 @@ export class PetPackEngine {
     this.bodyPlayer = p;
     this.currentBodyFile = file;
     this.currentState = state;
-    this.bodyBusy = false;
     return true;
   }
 
@@ -171,7 +226,7 @@ export class PetPackEngine {
 
   /* ---------------- 拖动 ---------------- */
 
-  /** 拖动开始：固定飞翔 + 光晕（规则 drag） */
+  /** 拖动开始：固定飞翔 + 光晕（规则 drag）。领养预热片，瞬时切换 */
   async dragStart(): Promise<void> {
     if (!this.pack.assets.fly.length) return;
     this.dragging = true;
@@ -179,17 +234,26 @@ export class PetPackEngine {
     this.interactSeq++; // 作废挂起的"回待机"定时器
     const rule = this.pack.triggerRules.find((r) => r.when === "drag");
     const file = this.pack.assets.fly[0];
-    // 预加载（attach 后台进行，不动当前画面），拖动视觉立即生效
-    await this.playBody(file, "fly");
+    await this.playBody(file, "fly"); // 预热池命中则零延迟
     this.applyRule(rule);
   }
 
-  /** 拖动结束：停背景，回待机 */
+  /** 拖动结束：停背景，回待机；fly 回收进预热池（下次拖动零延迟） */
   dragEnd(): void {
     if (!this.dragging) return;
     this.dragging = false;
     this.stopBg();
+    // fly 若正在上屏：送回预热池（暂停隐藏，不销毁）
+    const flyFile = this.pack.assets.fly[0];
+    if (this.bodyPlayer && this.currentBodyFile === flyFile) {
+      const p = this.bodyPlayer;
+      this.bodyPlayer = null;
+      p.pause();
+      p.setHidden(true);
+      this.warmBody.set(flyFile, p);
+    }
     void this.playBody(this.pickIdle(), "idle").then(() => this.scheduleIdleRotation());
+    // 下轮空闲再补预热（fly 已回池，其余照常）
   }
 
   /* ---------------- 背景层 ---------------- */
@@ -203,8 +267,18 @@ export class PetPackEngine {
     if (!req.key) return;
     const file = this.pack.backgrounds[req.key];
     if (!file) return;
+    // 领养预热背景（首帧就绪，零延迟）
+    const warm = this.warmBg.get(file);
+    if (warm) {
+      this.warmBg.delete(file);
+      warm.setHidden(false);
+      warm.play();
+      this.bgPlayer?.destroy();
+      this.bgPlayer = warm;
+      return;
+    }
     const p = new NeteasePetPlayer(this.base + file);
-    const ok = await p.attach(this.bgStage);
+    const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) return;
     this.bgPlayer?.destroy();
     this.bgPlayer = p;
@@ -225,6 +299,10 @@ export class PetPackEngine {
     window.clearTimeout(this.idleTimer);
     this.bodyPlayer?.destroy();
     this.bgPlayer?.destroy();
+    for (const p of this.warmBody.values()) if (p instanceof NeteasePetPlayer) p.destroy();
+    for (const p of this.warmBg.values()) p.destroy();
+    this.warmBody.clear();
+    this.warmBg.clear();
     this.bodyPlayer = null;
     this.bgPlayer = null;
     this.bodyStage.remove();
