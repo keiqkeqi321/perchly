@@ -33,6 +33,7 @@ interface Settings {
   fullscreen: boolean;
   allScreens: boolean;
   petEnabled: boolean;
+  petSkin: string;
 }
 
 /** status 事件 payload（planner.rs status()） */
@@ -59,7 +60,7 @@ const SAVE_DEBOUNCE_MS = 400;
 const SAVED_HINT_MS = 1500;
 
 /** 待保存补丁（键 → 值）；timer 句柄 */
-const pendingPatch = new Map<string, boolean | number>();
+const pendingPatch = new Map<string, boolean | number | string>();
 let saveTimer: number | undefined;
 
 /** DOM 引用 */
@@ -84,7 +85,7 @@ function showSavedHint(): void {
 /** 把 pendingPatch 发给后端（浅合并 + 落盘） */
 async function flushPatch(): Promise<void> {
   if (pendingPatch.size === 0) return;
-  const patch: Record<string, boolean | number> = {};
+  const patch: Record<string, boolean | number | string> = {};
   for (const [k, v] of pendingPatch) patch[k] = v;
   pendingPatch.clear();
   try {
@@ -104,7 +105,7 @@ async function flushPatch(): Promise<void> {
 }
 
 /** 记录一次修改：进 patch、重置 debounce 计时 */
-function queueSave(key: string, value: boolean | number): void {
+function queueSave(key: string, value: boolean | number | string): void {
   pendingPatch.set(key, value);
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void flushPatch(), SAVE_DEBOUNCE_MS);
@@ -184,14 +185,15 @@ function interpolateTick(): void {
 
 /** 用后端返回的设置填充表单（时长按单位反算） */
 function fillForm(s: Settings): void {
-  const inputs = document.querySelectorAll<HTMLInputElement>("[data-setting]");
+  const inputs = document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-setting]");
   for (const el of inputs) {
-    if (!(el instanceof HTMLInputElement)) continue;
     const key = el.dataset.setting as string;
     const raw = (s as unknown as Record<string, unknown>)[key];
     if (raw === undefined) continue;
 
-    if (el.type === "checkbox") {
+    if (el instanceof HTMLSelectElement) {
+      el.value = String(raw);
+    } else if (el.type === "checkbox") {
       el.checked = Boolean(raw);
     } else if (el.type === "number") {
       const unit = el.dataset.unit;
@@ -216,9 +218,13 @@ function updateDepRows(key: string): void {
 
 /** 绑定所有输入：change/input → queueSave */
 function bindForm(): void {
-  const inputs = document.querySelectorAll<HTMLInputElement>("[data-setting]");
+  const inputs = document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-setting]");
   for (const el of inputs) {
-    if (el.type === "checkbox") {
+    if (el instanceof HTMLSelectElement) {
+      el.addEventListener("change", () => {
+        queueSave(el.dataset.setting as string, el.value);
+      });
+    } else if (el.type === "checkbox") {
       el.addEventListener("change", () => {
         queueSave(el.dataset.setting as string, el.checked);
         updateDepRows(el.dataset.setting as string);

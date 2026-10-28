@@ -19,6 +19,8 @@ import { createTrickManager } from "./pet/tricks";
 import { bindEvents } from "./pet/bridge";
 import { setupPointer } from "./pet/pointer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { CLICK_QUOTES, PARTY_QUOTES, pick } from "./pet/quotes";
 import { NeteasePetPlayer } from "./pet/netease";
 
@@ -30,19 +32,32 @@ const COMBO_WINDOW_MS = 2500;
 function main(): void {
   const dom = getPetDom();
 
-  /* ---------- 网易云资源兼容模式 ----------
-   * URL: /pet.html?netease=<id|random|all>[&key=1]
-   *   - <id>：播放 manifest 中指定资源
-   *   - random：随机一条
-   *   - all：顺序轮播（每条循环三遍后切换）
-   *   - &key=1：启用 WebGL 色距抠像（深灰背景视频会误抠眼睛，默认关闭）
-   * 默认直显模式：视频本体 + 圆角遮罩（与网易云官方呈现一致的贴纸观感）
-   * 失败自动回退 SVG 状态机。
+  /* ---------- 网易云资源兼容模式 + 皮肤热切换 ----------
+   * 设置来源（优先级）：
+   *   1. URL 参数 ?netease=<id|random|all>[&key=1]（调试用，覆盖设置）
+   *   2. 设置项 petSkin（托盘/设置页切换，事件 pet-skin-changed 热切换）
+   * 皮肤值：svg=自绘鹦鹉；netease=直显；netease_key=抠像
    */
-  const neteaseParam = new URLSearchParams(location.search).get("netease");
-  if (neteaseParam) {
-    void tryNeteaseMode(dom, neteaseParam);
+  const params = new URLSearchParams(location.search);
+  const urlSkin = params.get("netease");
+  if (urlSkin) {
+    void applySkin(urlSkin === "all" ? "netease" : "netease", {
+      keying: params.get("key") === "1",
+      fixedId: urlSkin !== "random" && urlSkin !== "all" ? urlSkin : undefined,
+      rotate: urlSkin === "all",
+    });
+  } else {
+    // 初始皮肤：读设置，失败走 SVG
+    void invoke<{ petSkin?: string }>("get_settings")
+      .then((s) => applySkin(s.petSkin ?? "svg"))
+      .catch(() => applySkin("svg"));
+
+    // 托盘/设置页切换 → 热切换
+    listen<string>("pet-skin-changed", (ev) => {
+      void applySkin(ev.payload);
+    }).catch(() => {});
   }
+
 
   // 瞬时动作 + 气泡管理器
   const tricks = createTrickManager(dom);
@@ -118,55 +133,91 @@ function main(): void {
   window.addEventListener("pagehide", () => tricks.dispose(), { once: true });
 }
 
-/** 网易云资源兼容模式实现：加载 manifest → 选资源 → 直显/抠像 → 隐藏 SVG */
-async function tryNeteaseMode(dom: ReturnType<typeof getPetDom>, param: string): Promise<void> {
-  interface ManifestItem { id: string; file: string; width: number; height: number }
+/* ================= 皮肤系统（applySkin 统一入口） ================= */
+
+interface ManifestItem { id: string; file: string; width: number; height: number }
+
+/** 当前网易播放器与轮播定时器（切皮肤时销毁） */
+let activePlayer: NeteasePetPlayer | null = null;
+let activeStage: HTMLElement | null = null;
+let rotateTimer = 0;
+let applySeq = 0; // 防竞态：只允许最后一次 applySkin 生效
+
+interface SkinOpts {
+  keying?: boolean;
+  fixedId?: string;
+  rotate?: boolean;
+}
+
+/** 切换桌宠皮肤。svg=自绘；netease/netease_key=网易云资源。幂等：同皮肤重复调用直接返回 */
+async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
+  const seq = ++applySeq;
+  const dom = getPetDom();
+
+  // —— SVG 皮肤：清掉视频层，恢复 SVG ——
+  if (skin === "svg") {
+    disposeNetease(dom);
+    console.info("[pet] 皮肤: SVG 鹦鹉");
+    return;
+  }
+
+  // —— 网易皮肤：加载 manifest → 建播放器 ——
+  const keying = skin === "netease_key" || opts.keying === true;
   try {
     const res = await fetch("/assets/pets/netease/manifest.json");
     const items: ManifestItem[] = await res.json();
-    if (!items.length) return;
+    if (seq !== applySeq) return; // 已被更新的切换覆盖
+    if (!items.length) throw new Error("manifest 为空");
 
-    // 选资源：random 随机 / all 轮播（此处取随机起点）/ 指定 id
-    let item: ManifestItem;
-    if (param === "random" || param === "all") {
-      item = items[Math.floor(Math.random() * items.length)];
-    } else {
-      item = items.find((it) => it.id === param) ?? items[0];
-    }
+    const item = opts.fixedId
+      ? items.find((it) => it.id === opts.fixedId) ?? items[0]
+      : items[Math.floor(Math.random() * items.length)];
+
+    disposeNetease(dom); // 先清旧层（含 SVG 隐藏态的复位）
 
     const stage = document.createElement("div");
     stage.className = "netease-stage";
     dom.inner.appendChild(stage);
 
-    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`, {
-      // &key=1 才抠像；深灰背景视频抠像会误伤眼珠，默认直显
-      keying: new URLSearchParams(location.search).get("key") === "1",
-    });
+    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`, { keying });
     const ok = await player.attach(stage);
-    if (!ok) {
-      console.warn("[pet] 网易资源初始化失败，回退 SVG 模式");
-      stage.remove();
-      return;
-    }
+    if (seq !== applySeq) { player.destroy(); stage.remove(); return; }
+    if (!ok) throw new Error("播放器初始化失败");
 
-    // 成功：隐藏 SVG 鹦鹉与 Zzz，视频模式接管
+    activePlayer = player;
+    activeStage = stage;
+
+    // 视频模式接管：隐藏 SVG 与 Zzz
     dom.svg.style.display = "none";
     document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = "none"));
 
-    // all 模式：每条播放三遍后换下一条
-    if (param === "all") {
+    console.info(`[pet] 皮肤: 网易云${keying ? "(抠像)" : "(直显)"} ${item.id.slice(0, 8)} (${item.width}x${item.height})`);
+
+    // 轮播：每条循环三遍后换下一条
+    if (opts.rotate) {
       const idx = items.indexOf(item);
-      window.setTimeout(() => {
-        player.destroy(); stage.remove();
-        dom.svg.style.display = "";
-        void tryNeteaseMode(dom, items[(idx + 1) % items.length].id);
+      rotateTimer = window.setTimeout(() => {
+        void applySkin(skin, { keying, rotate: true, fixedId: items[(idx + 1) % items.length].id });
       }, (player.durationMs || 4000) * 3);
     }
-
-    console.info(`[pet] 网易云模式${player.keyingEnabled ? "(抠像)" : "(直显)"}: ${item.id} (${item.width}x${item.height})`);
   } catch (err) {
-    console.warn("[pet] 网易云模式初始化失败，回退 SVG:", err);
+    if (seq === applySeq) {
+      console.warn("[pet] 网易皮肤不可用，回退 SVG:", err);
+      disposeNetease(dom);
+    }
   }
+}
+
+/** 清理网易视频层并恢复 SVG 可见 */
+function disposeNetease(dom: ReturnType<typeof getPetDom>): void {
+  window.clearTimeout(rotateTimer);
+  rotateTimer = 0;
+  activePlayer?.destroy();
+  activePlayer = null;
+  activeStage?.remove();
+  activeStage = null;
+  dom.svg.style.display = "";
+  document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = ""));
 }
 
 main();
