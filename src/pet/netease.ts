@@ -23,8 +23,8 @@ export class NeteasePetPlayer {
     this.video.className = "netease-raw";
   }
 
-  /** 挂载并就绪（返回是否成功；失败 false 走降级） */
-  async attach(container: HTMLElement): Promise<boolean> {
+  /** 挂载并就绪。waitForFrame=true 时等到第一帧真正可呈现才 resolve（防换片空白闪烁） */
+  async attach(container: HTMLElement, opts: { waitForFrame?: boolean } = {}): Promise<boolean> {
     container.appendChild(this.video);
     await new Promise<void>((res) => {
       if (this.video.readyState >= 2) return res();
@@ -33,7 +33,19 @@ export class NeteasePetPlayer {
     });
     if (!this.video.videoWidth) return false; // 加载失败
     this.play();
+    if (opts.waitForFrame && "requestVideoFrameCallback" in this.video) {
+      // 等第一帧解码上屏（对旧浏览器/WebView 降级为立即返回）
+      await new Promise<void>((res) => {
+        (this.video as HTMLVideoElement & { requestVideoFrameCallback(cb: () => void): number })
+          .requestVideoFrameCallback(() => res());
+      });
+    }
     return true;
+  }
+
+  /** 临时隐藏（预加载新片时用，保持解码不动布局） */
+  setHidden(hidden: boolean): void {
+    this.video.style.visibility = hidden ? "hidden" : "";
   }
 
   play() { void this.video.play(); }

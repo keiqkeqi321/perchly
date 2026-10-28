@@ -83,14 +83,20 @@ export class PetPackEngine {
   private async playBody(file: string, state: "idle" | "interact" | "fly"): Promise<boolean> {
     if (this.disposed) return false;
     this.bodyBusy = true;
+    // 无缝换片：新片预载到第一帧可呈现，再同帧交接（旧隐藏→新显示→旧移除）
+    const oldPlayer = this.bodyPlayer;
+    oldPlayer?.setHidden(true);
     const p = new NeteasePetPlayer(this.base + file);
-    const ok = await p.attach(this.bodyStage);
+    const ok = await p.attach(this.bodyStage, { waitForFrame: true });
     this.bodyBusy = false;
-    if (!ok) return false;
-    this.bodyPlayer?.destroy();
+    if (!ok) {
+      oldPlayer?.setHidden(false); // 新片失败：旧片退场回显
+      return false;
+    }
     this.bodyPlayer = p;
     this.currentBodyFile = file;
     this.currentState = state;
+    oldPlayer?.destroy();
     return true;
   }
 
@@ -132,21 +138,28 @@ export class PetPackEngine {
     if (!pool.length) return [];
     const file = pool[Math.floor(Math.random() * pool.length)];
     window.clearTimeout(this.idleTimer);
+    this.dragging = false; // 兜底：拖拽桩异常时恢复可交互
+    this.interactSeq++; // 换片代际：旧定时器作废
+    const mySeq = this.interactSeq;
 
     const rule =
       this.pack.triggerRules.find((r) => r.when === `interact:${file}`) ??
       this.pack.triggerRules.find((r) => r.when === "interact:*");
 
     await this.playBody(file, "interact");
+    if (mySeq !== this.interactSeq) return []; // 期间又有新交互/拖动，本代作废
     this.applyRule(rule);
-    // 动作播完回待机
+    // 动作播完回待机（回调里再验代际：被更新的交互/拖动覆盖则不执行）
     const dur = this.bodyPlayer?.durationMs ?? 4000;
     this.idleTimer = window.setTimeout(() => {
+      if (mySeq !== this.interactSeq || this.dragging) return;
       this.stopBg();
       void this.playBody(this.pickIdle(), "idle").then(() => this.scheduleIdleRotation());
     }, dur);
     return rule?.quotes ?? [];
   }
+
+  private interactSeq = 0;
 
   /* ---------------- 拖动 ---------------- */
 
@@ -155,8 +168,10 @@ export class PetPackEngine {
     if (!this.pack.assets.fly.length) return;
     this.dragging = true;
     window.clearTimeout(this.idleTimer);
+    this.interactSeq++; // 作废挂起的"回待机"定时器
     const rule = this.pack.triggerRules.find((r) => r.when === "drag");
     const file = this.pack.assets.fly[0];
+    // 预加载（attach 后台进行，不动当前画面），拖动视觉立即生效
     await this.playBody(file, "fly");
     this.applyRule(rule);
   }
