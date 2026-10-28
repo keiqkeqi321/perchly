@@ -9,7 +9,8 @@
 # 踩坑备注见 docs/DEVLOG.md：
 #   #4 CARGO_BUILD_JOBS=2 防并行竞态；#7 NSIS 走镜像；#9 杀实例等 3 秒再打包
 set -euo pipefail
-cd "$(dirname "$0")"
+# 定位项目根（脚本在 scripts/ 下）
+cd "$(dirname "$0")/.."
 
 MIRROR="https://ghfast.top"          # GitHub 镜像（NSIS 工具链下载用）
 PKG_NAME="Perchly_0.1.0_x64-setup.exe"
