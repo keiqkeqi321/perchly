@@ -28,12 +28,11 @@ impl BreakKind {
     }
 }
 
-/// 桌宠皮肤：svg=自绘鹦鹉状态机；netease=网易云 WebM 直显；netease_key=网易云+抠像
+/// 桌宠皮肤：svg=自绘鹦鹉状态机；netease=网易云 WebM 直显
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PetSkin {
     Svg,
     Netease,
-    NeteaseKey,
 }
 
 impl PetSkin {
@@ -41,14 +40,13 @@ impl PetSkin {
         match self {
             PetSkin::Svg => "svg",
             PetSkin::Netease => "netease",
-            PetSkin::NeteaseKey => "netease_key",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "svg" => Some(PetSkin::Svg),
-            "netease" => Some(PetSkin::Netease),
-            "netease_key" => Some(PetSkin::NeteaseKey),
+            // 兼容旧配置：netease_key 统一降级为 netease
+            "netease" | "netease_key" => Some(PetSkin::Netease),
             _ => None,
         }
     }

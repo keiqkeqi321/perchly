@@ -34,16 +34,12 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
         true, skin == PetSkin::Svg, None::<&str>,
     ).unwrap();
     let sk_netease = CheckMenuItem::with_id(
-        app, "skin_netease", "网易云动作（直显）",
+        app, "skin_netease", "网易云动作",
         !s.netease_missing, skin == PetSkin::Netease, None::<&str>,
-    ).unwrap();
-    let sk_netease_key = CheckMenuItem::with_id(
-        app, "skin_netease_key", "网易云动作（透明抠像）",
-        !s.netease_missing, skin == PetSkin::NeteaseKey, None::<&str>,
     ).unwrap();
     let skin_menu = Submenu::with_id_and_items(
         app, "pet_skin", "桌宠皮肤", true,
-        &[&sk_svg, &sk_netease, &sk_netease_key],
+        &[&sk_svg, &sk_netease],
     ).unwrap();
 
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>).unwrap();
@@ -98,13 +94,9 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
         "pause_1h" => { let _ = tx.send(Cmd::Pause(Some(3_600_000))); }
         "pause_forever" => { let _ = tx.send(Cmd::Pause(None)); }
         "resume" => { let _ = tx.send(Cmd::Resume); }
-        "skin_svg" | "skin_netease" | "skin_netease_key" => {
+        "skin_svg" | "skin_netease" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选
-            let skin = match id {
-                "skin_svg" => PetSkin::Svg,
-                "skin_netease" => PetSkin::Netease,
-                _ => PetSkin::NeteaseKey,
-            };
+            let skin = if id == "skin_svg" { PetSkin::Svg } else { PetSkin::Netease };
             if let Some(ctx) = app.try_state::<crate::AppCtx>() {
                 let _ = ctx.store.lock().unwrap().update(
                     serde_json::json!({ "petSkin": skin.as_str() })

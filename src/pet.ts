@@ -34,15 +34,14 @@ function main(): void {
 
   /* ---------- 网易云资源兼容模式 + 皮肤热切换 ----------
    * 设置来源（优先级）：
-   *   1. URL 参数 ?netease=<id|random|all>[&key=1]（调试用，覆盖设置）
+   *   1. URL 参数 ?netease=<id|random|all>（调试用，覆盖设置）
    *   2. 设置项 petSkin（托盘/设置页切换，事件 pet-skin-changed 热切换）
-   * 皮肤值：svg=自绘鹦鹉；netease=直显；netease_key=抠像
+   * 皮肤值：svg=自绘鹦鹉；netease=网易云直显（圆角贴纸）
    */
   const params = new URLSearchParams(location.search);
   const urlSkin = params.get("netease");
   if (urlSkin) {
-    void applySkin(urlSkin === "all" ? "netease" : "netease", {
-      keying: params.get("key") === "1",
+    void applySkin("netease", {
       fixedId: urlSkin !== "random" && urlSkin !== "all" ? urlSkin : undefined,
       rotate: urlSkin === "all",
     });
@@ -144,12 +143,11 @@ let rotateTimer = 0;
 let applySeq = 0; // 防竞态：只允许最后一次 applySkin 生效
 
 interface SkinOpts {
-  keying?: boolean;
   fixedId?: string;
   rotate?: boolean;
 }
 
-/** 切换桌宠皮肤。svg=自绘；netease/netease_key=网易云资源。幂等：同皮肤重复调用直接返回 */
+/** 切换桌宠皮肤。svg=自绘；netease=网易云直显。 */
 async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
   const seq = ++applySeq;
   const dom = getPetDom();
@@ -162,7 +160,6 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
   }
 
   // —— 网易皮肤：加载 manifest → 建播放器 ——
-  const keying = skin === "netease_key" || opts.keying === true;
   try {
     const res = await fetch("/assets/pets/netease/manifest.json");
     const items: ManifestItem[] = await res.json();
@@ -179,7 +176,7 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     stage.className = "netease-stage";
     dom.inner.appendChild(stage);
 
-    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`, { keying });
+    const player = new NeteasePetPlayer(`/assets/pets/netease/${item.file}`);
     const ok = await player.attach(stage);
     if (seq !== applySeq) { player.destroy(); stage.remove(); return; }
     if (!ok) throw new Error("播放器初始化失败");
@@ -191,13 +188,13 @@ async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
     dom.svg.style.display = "none";
     document.querySelectorAll(".zzz").forEach((el) => ((el as HTMLElement).style.display = "none"));
 
-    console.info(`[pet] 皮肤: 网易云${keying ? "(抠像)" : "(直显)"} ${item.id.slice(0, 8)} (${item.width}x${item.height})`);
+    console.info(`[pet] 皮肤: 网易云直显 ${item.id.slice(0, 8)} (${item.width}x${item.height})`);
 
     // 轮播：每条循环三遍后换下一条
     if (opts.rotate) {
       const idx = items.indexOf(item);
       rotateTimer = window.setTimeout(() => {
-        void applySkin(skin, { keying, rotate: true, fixedId: items[(idx + 1) % items.length].id });
+        void applySkin(skin, { rotate: true, fixedId: items[(idx + 1) % items.length].id });
       }, (player.durationMs || 4000) * 3);
     }
   } catch (err) {

@@ -285,23 +285,18 @@ html, body {
   }
 }
 
-/* ============ 网易云 WebM 兼容模式 ============ */
-/* 抠像画布容器：铺满窗口、等比缩放、不拦截事件（命中仍走 .pet-hit） */
+/* ============ 网易云 WebM 直显模式 ============ */
+/* 视频容器：铺满窗口、居中、不拦截事件（命中仍走 .pet-hit） */
 .netease-stage {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   pointer-events: none;
 }
-.netease-stage canvas {
-  width: 220px;
-  height: 220px;
-  image-rendering: auto;
-}
 
-/* 直显模式：视频本体圆角（无阴影，贴纸感更干净） */
+/* 视频本体圆角（无阴影，贴纸感干净） */
 video.netease-raw {
   width: 200px;
   height: 200px;
