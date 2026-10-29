@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/src/styles/settings.css" />
   </head>
   <body>
-    <!-- ============ 顶部状态条：实时显示休息计划状态（监听 status 事件） ============ -->
+    <!-- ============ 顶部状态条：文字倒计时（进度展示在「休息节奏」时间轴游标） ============ -->
     <header class="status-bar">
       <div class="status-line">
         <div class="status-left">
@@ -20,7 +20,6 @@
           <span id="status-remaining" class="status-remaining">--:--</span>
         </div>
       </div>
-      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
     </header>
 
     <main class="cards">

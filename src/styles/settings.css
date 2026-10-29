@@ -44,7 +44,7 @@ body {
   z-index: 10;
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  padding: 10px 18px 12px;
+  padding: 12px 18px;
 }
 
 .status-line {
@@ -52,7 +52,6 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
 }
 
 .status-left {
@@ -119,21 +118,7 @@ body {
   background: var(--danger);
 }
 
-/* 进度条 */
-.progress-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 2px;
-  background: var(--teal);
-  transition: width 0.25s linear;
-}
+/* 进度条已移除：进度由「休息节奏」时间轴的游标表达（见 .seg .cursor） */
 
 /* ============ 卡片区 ============ */
 
@@ -345,8 +330,9 @@ body {
   display: flex;
   align-items: stretch;
   gap: 4px;
+  /* 顶部给游标上方的「当前」标签留位（标签约 15px + 间距 + 游标出头） */
   padding: 22px 12px 12px;
-  min-height: 88px;
+  min-height: 86px;
   overflow-x: auto;
 }
 
@@ -447,20 +433,31 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 「下一次休息」标记：静态描边 + 角标（数据来自 status 事件） */
-.seg.next::after {
-  content: "";
+/* 「下一个休息」不再单独标记：有游标即自然知道下一个块是休息 */
+
+/* 「现在」游标：只在当前段内扫动（段宽非时间比例，全局位置会失真）。
+   left 由 main.ts 按 status 的段内进度更新（500ms 插值 tick） */
+.seg .cursor {
   position: absolute;
-  inset: -4px;
-  border-radius: 12px;
-  border: 2px solid var(--teal);
+  top: -3px;
+  bottom: -3px;
+  left: 0%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--teal-dark);
+  border-radius: 1px;
+  transition: left 0.45s linear, opacity 0.3s ease;
 }
-.seg-long.next::after {
-  border-color: var(--danger);
+/* 休息块是实心色，游标换白色保证对比 */
+.seg-micro .cursor,
+.seg-long .cursor {
+  background: #fff;
 }
-.seg .next-tag {
+
+/* 游标上方的「当前」小标签：随游标一起滑动 */
+.cursor .cursor-tag {
   position: absolute;
-  top: -18px;
+  bottom: calc(100% + 3px);
   left: 50%;
   transform: translateX(-50%);
   background: var(--teal);
@@ -471,12 +468,13 @@ body {
   border-radius: 999px;
   white-space: nowrap;
 }
-.seg-long.next .next-tag {
-  background: var(--danger);
+
+/* 当前段：边框/文字轻微强调，配合游标定位 */
+.seg.seg-work.current {
+  border-color: var(--teal);
 }
-/* 带角标时序号隐藏，避免重叠（角标里已含序号） */
-.seg-micro.next .ord {
-  display: none;
+.seg.seg-work.current .seg-name {
+  color: var(--teal-dark);
 }
 
 /* 摘要行：一句话讲清一个循环 */

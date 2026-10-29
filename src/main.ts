@@ -69,7 +69,6 @@ const els = {
   next: document.getElementById("status-next") as HTMLElement,
   remaining: document.getElementById("status-remaining") as HTMLElement,
   paused: document.getElementById("status-paused") as HTMLElement,
-  progress: document.getElementById("progress-fill") as HTMLElement,
   saveHint: document.getElementById("save-hint") as HTMLElement,
   strip: document.getElementById("cycle-strip") as HTMLElement,
   caption: document.getElementById("cycle-caption") as HTMLElement,
@@ -151,17 +150,21 @@ function renderStatus(st: StatusPayload): void {
   renderCycle();
 }
 
-/** 用快照 + 本地推算的 remaining/progress 重绘状态条 */
+/** 用快照 + 本地推算的 remaining/progress 重绘状态条与时间轴游标 */
 function paintStatus(st: StatusPayload, remainingMs: number, progress: number): void {
   const paused = st.paused;
   els.paused.classList.toggle("visible", paused);
-  els.progress.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+
+  // 游标跟随当前段内进度（插值 tick 也走这里；暂停时隐藏）
+  if (cursorEl) {
+    cursorEl.style.opacity = paused ? "0" : "1";
+    if (!paused) cursorEl.style.left = `${Math.min(100, Math.max(0, progress))}%`;
+  }
 
   if (paused) {
     els.phase.textContent = "已暂停";
     els.next.textContent = "";
     els.remaining.textContent = "--:--";
-    els.progress.style.width = "0%";
     return;
   }
 
@@ -241,9 +244,6 @@ function updateDepRows(key: string): void {
 
 /* ============ 休息节奏：循环时间轴 ============ */
 
-/** 圆圈数字（一轮里第几次微休息） */
-const CIRCLED_DIGITS = "①②③④⑤⑥⑦⑧⑨⑩";
-
 /** breakInterval 的 UI 状态（步进器范围 1–10；不再走数字输入，单独与后端同步） */
 let breakIntervalValue = 2;
 
@@ -282,9 +282,13 @@ function formatRoundMinutes(min: number): string {
   return min >= 1 ? `约 ${Math.round(min)} 分钟` : `不足 1 分钟`;
 }
 
+/** 「现在」游标元素（renderCycle 重建后重新指向；插值 tick 只更新 left，不重建 DOM） */
+let cursorEl: HTMLElement | null = null;
+
 /** 重画循环时间轴 + 摘要行（加载 / 输入变化 / status 事件时调用） */
 function renderCycle(): void {
   const v = readCycleVals();
+  cursorEl = null;
 
   if (!v.micro && !v.long) {
     els.strip.innerHTML = `<div class="cycle-empty">💤 休息已关闭 —— 小鹦鹉会一直陪着你工作</div>`;
@@ -292,56 +296,66 @@ function renderCycle(): void {
     return;
   }
 
-  // 「下一次」标记：把 planner 状态映射到循环中的位置。
-  // 等待期 breakNumber 即即将到来的第几个休息（next_break 先自增再挂 deadline）；
-  // 休息进行中则下一次 = breakNumber + 1。一轮周期 = n+1 个休息，第 n+1 个为长休息。
-  let mark: { kind: "micro" | "long"; ord: number } | null = null;
+  // planner 状态 → 当前段。等待期 breakNumber 即即将到来的第几个休息
+  // （next_break 先自增再挂 deadline），当前段 = 其前面的工作段；
+  // 休息进行中当前段 = 休息段本身（下一次休息自然就是紧邻的下一个块）。
+  // 一轮周期 = n+1 个休息，第 n+1 个为长休息。
   const st = lastStatus;
-  if (st && !st.paused) {
+  let cur: { kind: "work" | "micro" | "long"; idx: number } | null = null; // 「当前」段（游标）
+  if (st && !st.paused && st.phase !== "none") {
+    const inBreak = st.phase === "FinishMicrobreak" || st.phase === "FinishBreak";
+    const period = v.n + 1;
+    const posOf = (r: number): number => ((r - 1) % period) + 1;
     if (v.micro && v.long) {
-      const period = v.n + 1;
-      const inBreak = st.phase === "FinishMicrobreak" || st.phase === "FinishBreak";
-      const upcoming = Math.max(1, inBreak ? st.breakNumber + 1 : st.breakNumber);
-      const pos = ((upcoming - 1) % period) + 1;
-      mark = pos === period ? { kind: "long", ord: 0 } : { kind: "micro", ord: pos };
+      cur = inBreak
+        ? posOf(st.breakNumber) === period
+          ? { kind: "long", idx: 0 }
+          : { kind: "micro", idx: posOf(st.breakNumber) }
+        : { kind: "work", idx: posOf(st.breakNumber) };
     } else {
-      mark = v.micro ? { kind: "micro", ord: 1 } : { kind: "long", ord: 0 };
+      cur = inBreak ? (v.micro ? { kind: "micro", idx: 1 } : { kind: "long", idx: 0 }) : { kind: "work", idx: 1 };
     }
   }
-  const tag = (kind: "micro" | "long", ord: number): string => {
-    if (!mark || mark.kind !== kind) return "";
-    if (kind === "micro" && mark.ord !== ord) return "";
-    return `<span class="next-tag">下一次${kind === "micro" ? ` ${CIRCLED_DIGITS[ord - 1] ?? ""}` : ""}</span>`;
+  // 游标以 status 自带的段内进度起步（之后由插值 tick 平滑推进）；
+  // 上方「当前」小标签随游标一起滑动
+  const curHtml = (kind: "work" | "micro" | "long", idx: number): string => {
+    if (!cur || cur.kind !== kind || cur.idx !== idx) return "";
+    const pct = st ? Math.min(100, Math.max(0, st.progressPercent)) : 0;
+    return `<span class="cursor" style="left:${pct}%"><span class="cursor-tag">当前</span></span>`;
   };
+  const curCls = (kind: "work" | "micro" | "long", idx: number): string =>
+    cur && cur.kind === kind && cur.idx === idx ? " current" : "";
   const LOOP_HTML = `<div class="seg seg-loop"><span class="loop-icon">↻</span><span class="loop-text">循环</span></div>`;
-  const workSeg = `<div class="seg seg-work"><span class="seg-name">工作</span><span class="seg-val">${v.mi} 分钟</span></div>`;
+  const workSeg = (idx: number): string =>
+    `<div class="seg seg-work${curCls("work", idx)}">${curHtml("work", idx)}<span class="seg-name">工作</span><span class="seg-val">${v.mi} 分钟</span></div>`;
 
   if (v.micro && v.long) {
     let html = "";
     for (let i = 1; i <= v.n; i++) {
-      html += workSeg;
-      const isNext = mark !== null && mark.kind === "micro" && mark.ord === i;
-      html += `<div class="seg seg-micro${isNext ? " next" : ""}">${tag("micro", i)}<span class="ord">${i}</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>`;
+      html += workSeg(i);
+      html += `<div class="seg seg-micro${curCls("micro", i)}">${curHtml("micro", i)}<span class="ord">${i}</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>`;
     }
-    html += workSeg;
-    html += `<div class="seg seg-long${mark !== null && mark.kind === "long" ? " next" : ""}">${tag("long", 0)}<span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>`;
+    html += workSeg(v.n + 1);
+    html += `<div class="seg seg-long${curCls("long", 0)}">${curHtml("long", 0)}<span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>`;
     els.strip.innerHTML = html + LOOP_HTML;
     const roundMin = (v.n + 1) * v.mi + (v.n * v.md) / 60 + v.bd;
     els.caption.innerHTML = `<span class="dot">●</span> 一个循环 = ${v.n} 次微休息 + 1 次长休息，<b>${formatRoundMinutes(roundMin)}</b>，然后重新开始`;
   } else if (v.micro) {
     els.strip.innerHTML =
-      workSeg +
-      `<div class="seg seg-micro next"><span class="next-tag">下一次</span><span class="ord">1</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>` +
+      workSeg(1) +
+      `<div class="seg seg-micro${curCls("micro", 1)}">${curHtml("micro", 1)}<span class="ord">1</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>` +
       LOOP_HTML;
     els.caption.innerHTML = `<span class="dot">●</span> 只安排微休息：每工作 ${v.mi} 分钟休息 ${v.md} 秒，一直循环`;
   } else {
     const every = v.mi * (v.n + 1);
     els.strip.innerHTML =
-      workSeg +
-      `<div class="seg seg-long next"><span class="next-tag">下一次</span><span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>` +
+      workSeg(1) +
+      `<div class="seg seg-long${curCls("long", 0)}">${curHtml("long", 0)}<span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>` +
       LOOP_HTML;
     els.caption.innerHTML = `<span class="dot">●</span> 只安排长休息：每 <b>${every} 分钟</b>（${v.mi} 分钟 × ${v.n + 1}）休息 ${v.bd} 分钟`;
   }
+
+  cursorEl = els.strip.querySelector<HTMLElement>(".seg .cursor");
 }
 
 /** 绑定所有输入：change/input → queueSave */
