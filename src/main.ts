@@ -71,6 +71,11 @@ const els = {
   paused: document.getElementById("status-paused") as HTMLElement,
   progress: document.getElementById("progress-fill") as HTMLElement,
   saveHint: document.getElementById("save-hint") as HTMLElement,
+  strip: document.getElementById("cycle-strip") as HTMLElement,
+  caption: document.getElementById("cycle-caption") as HTMLElement,
+  biMinus: document.getElementById("bi-minus") as HTMLButtonElement,
+  biPlus: document.getElementById("bi-plus") as HTMLButtonElement,
+  biNum: document.getElementById("bi-num") as HTMLElement,
 };
 
 let savedHintTimer: number | undefined;
@@ -143,6 +148,7 @@ function renderStatus(st: StatusPayload): void {
   lastStatus = st;
   lastStatusAt = Date.now();
   paintStatus(st, st.remainingMs, st.progressPercent);
+  renderCycle();
 }
 
 /** 用快照 + 本地推算的 remaining/progress 重绘状态条 */
@@ -211,7 +217,16 @@ function fillForm(s: Settings): void {
     // 联动子行显隐
     updateDepRows(key);
   }
+  // breakInterval 不再是数字输入：单独同步步进器，并首绘节奏时间轴
+  setBreakInterval(s.breakInterval, false);
+  renderCycle();
 }
+
+/** 休息节奏行（开关在行内）：关闭时压暗整行文字与控件，但开关保持可点 */
+const RHYTHM_ROWS: Record<string, string> = {
+  microbreak: "row-microbreak",
+  break: "row-break",
+};
 
 /** 开关控制子行显隐：data-dep="microbreak" 之类 */
 function updateDepRows(key: string): void {
@@ -220,6 +235,113 @@ function updateDepRows(key: string): void {
   document.querySelectorAll<HTMLElement>(`[data-dep="${key}"]`).forEach((row) => {
     row.classList.toggle("dimmed", !src.checked);
   });
+  const rowId = RHYTHM_ROWS[key];
+  if (rowId) document.getElementById(rowId)?.classList.toggle("off", !src.checked);
+}
+
+/* ============ 休息节奏：循环时间轴 ============ */
+
+/** 圆圈数字（一轮里第几次微休息） */
+const CIRCLED_DIGITS = "①②③④⑤⑥⑦⑧⑨⑩";
+
+/** breakInterval 的 UI 状态（步进器范围 1–10；不再走数字输入，单独与后端同步） */
+let breakIntervalValue = 2;
+
+/** 更新步进器显示与可用态；save=true 时入队保存 */
+function setBreakInterval(value: number, save: boolean): void {
+  breakIntervalValue = Math.min(10, Math.max(1, Math.round(value) || 1));
+  els.biNum.textContent = String(breakIntervalValue);
+  els.biMinus.disabled = breakIntervalValue <= 1;
+  els.biPlus.disabled = breakIntervalValue >= 10;
+  if (save) queueSave("breakInterval", breakIntervalValue);
+}
+
+/** 从表单读当前节奏设置（以 DOM 为准，改数字即时反映到时间轴） */
+function readCycleVals(): { micro: boolean; long: boolean; mi: number; md: number; bd: number; n: number } {
+  const num = (key: string): number => {
+    const el = document.querySelector<HTMLInputElement>(`[data-setting="${key}"]`);
+    const v = el ? Number(el.value) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  const flag = (key: string): boolean => {
+    const el = document.querySelector<HTMLInputElement>(`[data-setting="${key}"][type="checkbox"]`);
+    return el ? el.checked : false;
+  };
+  return {
+    micro: flag("microbreak"),
+    long: flag("break"),
+    mi: num("microbreakInterval"),
+    md: num("microbreakDuration"),
+    bd: num("breakDuration"),
+    n: breakIntervalValue,
+  };
+}
+
+/** 循环总时长（分钟）→ 摘要文案 */
+function formatRoundMinutes(min: number): string {
+  return min >= 1 ? `约 ${Math.round(min)} 分钟` : `不足 1 分钟`;
+}
+
+/** 重画循环时间轴 + 摘要行（加载 / 输入变化 / status 事件时调用） */
+function renderCycle(): void {
+  const v = readCycleVals();
+
+  if (!v.micro && !v.long) {
+    els.strip.innerHTML = `<div class="cycle-empty">💤 休息已关闭 —— 小鹦鹉会一直陪着你工作</div>`;
+    els.caption.innerHTML = `<span class="dot">●</span> 两类休息都未启用，可随时打开下面的开关`;
+    return;
+  }
+
+  // 「下一次」标记：把 planner 状态映射到循环中的位置。
+  // 等待期 breakNumber 即即将到来的第几个休息（next_break 先自增再挂 deadline）；
+  // 休息进行中则下一次 = breakNumber + 1。一轮周期 = n+1 个休息，第 n+1 个为长休息。
+  let mark: { kind: "micro" | "long"; ord: number } | null = null;
+  const st = lastStatus;
+  if (st && !st.paused) {
+    if (v.micro && v.long) {
+      const period = v.n + 1;
+      const inBreak = st.phase === "FinishMicrobreak" || st.phase === "FinishBreak";
+      const upcoming = Math.max(1, inBreak ? st.breakNumber + 1 : st.breakNumber);
+      const pos = ((upcoming - 1) % period) + 1;
+      mark = pos === period ? { kind: "long", ord: 0 } : { kind: "micro", ord: pos };
+    } else {
+      mark = v.micro ? { kind: "micro", ord: 1 } : { kind: "long", ord: 0 };
+    }
+  }
+  const tag = (kind: "micro" | "long", ord: number): string => {
+    if (!mark || mark.kind !== kind) return "";
+    if (kind === "micro" && mark.ord !== ord) return "";
+    return `<span class="next-tag">下一次${kind === "micro" ? ` ${CIRCLED_DIGITS[ord - 1] ?? ""}` : ""}</span>`;
+  };
+  const LOOP_HTML = `<div class="seg seg-loop"><span class="loop-icon">↻</span><span class="loop-text">循环</span></div>`;
+  const workSeg = `<div class="seg seg-work"><span class="seg-name">工作</span><span class="seg-val">${v.mi} 分钟</span></div>`;
+
+  if (v.micro && v.long) {
+    let html = "";
+    for (let i = 1; i <= v.n; i++) {
+      html += workSeg;
+      const isNext = mark !== null && mark.kind === "micro" && mark.ord === i;
+      html += `<div class="seg seg-micro${isNext ? " next" : ""}">${tag("micro", i)}<span class="ord">${i}</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>`;
+    }
+    html += workSeg;
+    html += `<div class="seg seg-long${mark !== null && mark.kind === "long" ? " next" : ""}">${tag("long", 0)}<span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>`;
+    els.strip.innerHTML = html + LOOP_HTML;
+    const roundMin = (v.n + 1) * v.mi + (v.n * v.md) / 60 + v.bd;
+    els.caption.innerHTML = `<span class="dot">●</span> 一个循环 = ${v.n} 次微休息 + 1 次长休息，<b>${formatRoundMinutes(roundMin)}</b>，然后重新开始`;
+  } else if (v.micro) {
+    els.strip.innerHTML =
+      workSeg +
+      `<div class="seg seg-micro next"><span class="next-tag">下一次</span><span class="ord">1</span><span class="seg-name">微休息</span><span class="seg-val">${v.md} 秒</span></div>` +
+      LOOP_HTML;
+    els.caption.innerHTML = `<span class="dot">●</span> 只安排微休息：每工作 ${v.mi} 分钟休息 ${v.md} 秒，一直循环`;
+  } else {
+    const every = v.mi * (v.n + 1);
+    els.strip.innerHTML =
+      workSeg +
+      `<div class="seg seg-long next"><span class="next-tag">下一次</span><span class="seg-name">长休息</span><span class="seg-val">${v.bd} 分钟</span></div>` +
+      LOOP_HTML;
+    els.caption.innerHTML = `<span class="dot">●</span> 只安排长休息：每 <b>${every} 分钟</b>（${v.mi} 分钟 × ${v.n + 1}）休息 ${v.bd} 分钟`;
+  }
 }
 
 /** 绑定所有输入：change/input → queueSave */
@@ -234,6 +356,7 @@ function bindForm(): void {
       el.addEventListener("change", () => {
         queueSave(el.dataset.setting as string, el.checked);
         updateDepRows(el.dataset.setting as string);
+        renderCycle();
       });
     } else if (el.type === "number") {
       const handler = (): void => {
@@ -244,16 +367,28 @@ function bindForm(): void {
         if (!Number.isFinite(parsed)) return;
         const clamped = Math.min(Number(el.max), Math.max(Number(el.min), parsed));
         queueSave(key, Math.round(clamped * factor));
+        renderCycle();
       };
       el.addEventListener("input", handler);
       el.addEventListener("change", handler);
     }
   }
+  // 「每 N 次微休息」步进器
+  els.biMinus.addEventListener("click", () => {
+    setBreakInterval(breakIntervalValue - 1, true);
+    renderCycle();
+  });
+  els.biPlus.addEventListener("click", () => {
+    setBreakInterval(breakIntervalValue + 1, true);
+    renderCycle();
+  });
 }
 
 /** 入口 */
 async function main(): Promise<void> {
   bindForm();
+  // 先按 HTML 默认值画出节奏时间轴（后端加载前也有完整首屏）
+  renderCycle();
   // 加载设置并填充表单
   try {
     const s = await invoke<Settings>("get_settings");

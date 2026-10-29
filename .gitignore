@@ -6,3 +6,4 @@ src-tauri/gen
 .DS_Store
 docs/pet_assets_research/*.webm
 docs/pet_assets_research/preview*.gif
+design/*.png

@@ -336,3 +336,254 @@ body {
   outline: none;
   border-color: #47848f;
 }
+
+/* ============ 休息节奏：循环时间轴 ============ */
+
+/* 一个完整循环：斜纹段=工作，青色块=微休息，赤陶色块=长休息，末尾 ↻ 循环。
+   宽度只做示意（工作/休息真实时长差异过大），n 较大时允许横向滚动 */
+.cycle-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 22px 12px 12px;
+  min-height: 88px;
+  overflow-x: auto;
+}
+
+.seg {
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  position: relative;
+}
+
+/* 工作段：斜纹底，占满剩余宽度 */
+.seg-work {
+  flex: 1 1 0;
+  min-width: 30px;
+  background: repeating-linear-gradient(-45deg, #eef3f4 0 7px, #e6eef0 7px 14px);
+  border: 1px solid #dbe4e7;
+  color: var(--text-dim);
+  padding: 6px 2px;
+}
+.seg-work .seg-name {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.seg-work .seg-val {
+  font-size: 10px;
+  color: #9aa6ac;
+  white-space: nowrap;
+}
+
+/* 微休息段：实心 teal 小块 */
+.seg-micro {
+  width: 40px;
+  flex-shrink: 0;
+  background: var(--teal);
+  color: #fff;
+}
+.seg-micro .seg-name {
+  font-size: 11px;
+  font-weight: 600;
+}
+.seg-micro .seg-val {
+  font-size: 10px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+/* 长休息段：赤陶色宽块 */
+.seg-long {
+  width: 86px;
+  flex-shrink: 0;
+  background: var(--danger);
+  color: #fff;
+}
+.seg-long .seg-name {
+  font-size: 11px;
+  font-weight: 600;
+}
+.seg-long .seg-val {
+  font-size: 10px;
+  opacity: 0.88;
+  white-space: nowrap;
+}
+
+/* 循环回环指示 */
+.seg-loop {
+  width: 34px;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text-dim);
+  justify-content: center;
+}
+.seg-loop .loop-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.seg-loop .loop-text {
+  font-size: 10px;
+}
+
+/* 微休息序号徽标（一轮里第几次） */
+.seg .ord {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 1px solid var(--teal);
+  color: var(--teal-dark);
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「下一次休息」标记：静态描边 + 角标（数据来自 status 事件） */
+.seg.next::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 12px;
+  border: 2px solid var(--teal);
+}
+.seg-long.next::after {
+  border-color: var(--danger);
+}
+.seg .next-tag {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--teal);
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.seg-long.next .next-tag {
+  background: var(--danger);
+}
+/* 带角标时序号隐藏，避免重叠（角标里已含序号） */
+.seg-micro.next .ord {
+  display: none;
+}
+
+/* 摘要行：一句话讲清一个循环 */
+.cycle-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.cycle-caption .dot {
+  color: var(--teal);
+}
+.cycle-caption b {
+  color: var(--teal-dark);
+  font-weight: 600;
+}
+
+/* 两类休息都关闭时的空状态 */
+.cycle-empty {
+  flex: 1;
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ============ 休息节奏：行内控件 ============ */
+
+.rhythm-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rhythm-controls .phrase {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.rhythm-controls .sep {
+  color: var(--border);
+  font-size: 12px;
+}
+.rhythm-controls .switch {
+  margin-left: 4px;
+}
+
+/* 该类休息关闭时：压暗文字与控件，但开关本身保持可点 */
+.row .row-text,
+.row .rhythm-controls .field,
+.row .rhythm-controls .phrase,
+.row .rhythm-controls .sep,
+.row .rhythm-controls .stepper {
+  transition: opacity 0.18s ease;
+}
+.row.off .row-text,
+.row.off .rhythm-controls .field,
+.row.off .rhythm-controls .phrase,
+.row.off .rhythm-controls .sep,
+.row.off .rhythm-controls .stepper {
+  opacity: 0.45;
+}
+
+/* 「每 N 次」步进器（范围 1–10） */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.stepper button {
+  width: 24px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--teal-dark);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+.stepper button:hover:not(:disabled) {
+  background: var(--teal-light);
+}
+.stepper button:disabled {
+  color: #c4ccd0;
+  cursor: default;
+}
+.stepper button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+.stepper .num {
+  width: 26px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

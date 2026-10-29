@@ -24,88 +24,72 @@
     </header>
 
     <main class="cards">
-      <!-- ============ 微休息 ============ -->
+      <!-- ============ 休息节奏（微休息 / 长休息 / 循环可视化） ============ -->
       <section class="card">
-        <h2>微休息</h2>
-        <div class="row">
-          <label class="row-text" for="microbreak">
-            <span class="row-title">启用微休息</span>
-            <span class="row-desc">工作间隙的短暂停顿，放松眼睛</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="microbreak" data-setting="microbreak" />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="row" data-dep="microbreak">
-          <div class="row-text">
-            <span class="row-title">休息时长</span>
-            <span class="row-desc">每次微休息持续的秒数</span>
-          </div>
-          <div class="field">
-            <input
-              type="number" min="3" max="300" step="1"
-              data-setting="microbreakDuration" data-unit="sec"
-              aria-label="微休息时长（秒）"
-            />
-            <span class="unit">秒</span>
-          </div>
-        </div>
-        <div class="row" data-dep="microbreak">
-          <div class="row-text">
-            <span class="row-title">间隔</span>
-            <span class="row-desc">两次微休息之间的工作时长</span>
-          </div>
-          <div class="field">
-            <input
-              type="number" min="1" max="120" step="1"
-              data-setting="microbreakInterval" data-unit="min"
-              aria-label="微休息间隔（分钟）"
-            />
-            <span class="unit">分钟</span>
-          </div>
-        </div>
-      </section>
+        <h2>休息节奏</h2>
+        <!-- 一个完整循环的时间轴：斜纹=工作，青色=微休息，赤陶色=长休息 -->
+        <div id="cycle-strip" class="cycle-strip"></div>
+        <div id="cycle-caption" class="cycle-caption"></div>
 
-      <!-- ============ 长休息 ============ -->
-      <section class="card">
-        <h2>长休息</h2>
-        <div class="row">
-          <label class="row-text" for="break">
-            <span class="row-title">启用长休息</span>
-            <span class="row-desc">更长也更彻底的放松</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="break" data-setting="break" />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="row" data-dep="break">
+        <div class="row" id="row-microbreak">
           <div class="row-text">
-            <span class="row-title">休息时长</span>
-            <span class="row-desc">每次长休息持续的分钟数</span>
+            <span class="row-title">微休息</span>
+            <span class="row-desc">短暂停顿，放松眼睛</span>
           </div>
-          <div class="field">
-            <input
-              type="number" min="1" max="60" step="1"
-              data-setting="breakDuration" data-unit="min"
-              aria-label="长休息时长（分钟）"
-            />
-            <span class="unit">分钟</span>
+          <div class="rhythm-controls">
+            <span class="phrase">每</span>
+            <div class="field">
+              <input
+                type="number" min="1" max="120" step="1" value="10"
+                data-setting="microbreakInterval" data-unit="min"
+                aria-label="微休息间隔（分钟）"
+              />
+              <span class="unit">分钟</span>
+            </div>
+            <span class="sep">·</span>
+            <span class="phrase">休息</span>
+            <div class="field">
+              <input
+                type="number" min="3" max="300" step="1" value="20"
+                data-setting="microbreakDuration" data-unit="sec"
+                aria-label="微休息时长（秒）"
+              />
+              <span class="unit">秒</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="microbreak" data-setting="microbreak" checked />
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
-        <div class="row" data-dep="break">
+
+        <div class="row" id="row-break">
           <div class="row-text">
-            <span class="row-title">周期</span>
-            <span class="row-desc">每几个周期来一次长休息（其余为微休息）</span>
+            <span class="row-title">长休息</span>
+            <span class="row-desc">更深度的放松</span>
           </div>
-          <div class="field">
-            <input
-              type="number" min="1" max="10" step="1"
-              data-setting="breakInterval"
-              aria-label="长休息周期（个）"
-            />
-            <span class="unit">个周期</span>
+          <div class="rhythm-controls">
+            <span class="phrase">每</span>
+            <div class="stepper" role="group" aria-label="长休息前的微休息次数">
+              <button type="button" id="bi-minus" aria-label="减少微休息次数">−</button>
+              <span class="num" id="bi-num">2</span>
+              <button type="button" id="bi-plus" aria-label="增加微休息次数">+</button>
+            </div>
+            <span class="phrase">次微休息后</span>
+            <span class="sep">·</span>
+            <span class="phrase">休息</span>
+            <div class="field">
+              <input
+                type="number" min="1" max="60" step="1" value="5"
+                data-setting="breakDuration" data-unit="min"
+                aria-label="长休息时长（分钟）"
+              />
+              <span class="unit">分钟</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="break" data-setting="break" checked />
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
       </section>

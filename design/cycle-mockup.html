@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Perchly 设计稿 — 休息节奏可视化</title>
+<style>
+  /* ============ 设计令牌：与 src/styles/settings.css 完全一致 ============ */
+  :root {
+    --teal: #47848f;
+    --teal-dark: #3a6d76;
+    --teal-light: #eaf3f4;
+    --bg: #f4f6f7;
+    --card: #ffffff;
+    --border: #e2e7e9;
+    --text: #2b3238;
+    --text-dim: #7a868d;
+    --danger: #c26843;
+    --danger-light: #f7ede7;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+      "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    width: 720px;
+    margin: 0 auto;
+    padding: 18px 0 40px;
+  }
+
+  /* ============ 评审页框架（非实现内容） ============ */
+  .review-note {
+    background: #fffbe8;
+    border: 1px solid #eadfa8;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #7a6a2f;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .review-note b { color: #5c501f; }
+  .review-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin: 18px 2px 8px;
+  }
+
+  /* ============ 通用卡片 / 行（复刻现有样式） ============ */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 16px 6px;
+  }
+  .card h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    color: var(--teal-dark); text-transform: uppercase;
+    padding: 10px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 2px;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row.dimmed { opacity: 0.45; pointer-events: none; }
+  .row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .row-title { font-weight: 500; }
+  .row-desc { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+  .field { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .field input[type="number"] {
+    width: 64px; padding: 5px 8px; font-size: 13px; font-variant-numeric: tabular-nums;
+    color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; outline: none; text-align: right;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .field input[type="number"]:focus { border-color: var(--teal); background: var(--card); }
+  .field input::-webkit-outer-spin-button,
+  .field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .field .unit { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; inset: 0; background: #cfd6d9; border-radius: 999px;
+    cursor: pointer; transition: background .18s ease;
+  }
+  .switch .slider::before {
+    content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px;
+    background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    transition: transform .18s ease;
+  }
+  .switch input:checked + .slider { background: var(--teal); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+
+  /* ============ ★ 新设计：循环时间轴 ============ */
+  .cycle-strip {
+    display: flex; align-items: stretch; gap: 4px;
+    padding: 14px 12px 12px;
+    min-height: 84px;
+  }
+  .seg {
+    border-radius: 9px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; text-align: center; position: relative;
+    transition: flex .25s ease, width .25s ease, background .2s ease;
+  }
+  /* 工作段：斜纹底 + 可编辑时长 */
+  .seg-work {
+    flex: 1 1 0; min-width: 30px;
+    background: repeating-linear-gradient(-45deg, #eef3f4 0 7px, #e6eef0 7px 14px);
+    border: 1px solid #dbe4e7; color: var(--text-dim);
+    padding: 6px 2px; cursor: default;
+  }
+  .seg-work .seg-name { font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .seg-work .seg-val { font-size: 10px; color: #9aa6ac; white-space: nowrap; }
+  /* 微休息段：实心 teal 小块 */
+  .seg-micro {
+    width: 40px; flex-shrink: 0; background: var(--teal); color: #fff;
+  }
+  .seg-micro .seg-name { font-size: 11px; font-weight: 600; }
+  .seg-micro .seg-val { font-size: 10px; opacity: .85; white-space: nowrap; }
+  /* 长休息段：赤陶色宽块 */
+  .seg-long {
+    width: 86px; flex-shrink: 0; background: var(--danger); color: #fff;
+  }
+  .seg-long .seg-name { font-size: 11px; font-weight: 600; }
+  .seg-long .seg-val { font-size: 10px; opacity: .88; white-space: nowrap; }
+  /* 循环回环指示 */
+  .seg-loop {
+    width: 34px; flex-shrink: 0; background: transparent; color: var(--text-dim);
+    justify-content: center;
+  }
+  .seg-loop .loop-icon { font-size: 20px; line-height: 1; }
+  .seg-loop .loop-text { font-size: 10px; }
+
+  /* 序号小徽标（第几次微休息） */
+  .seg .ord {
+    position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--teal); color: var(--teal-dark);
+    font-size: 9px; line-height: 1; padding: 2px 5px; border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* “下一次休息”标记：静态描边常显 + 呼吸动画增强 */
+  .seg.next::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 12px;
+    border: 2px solid var(--teal);
+  }
+  .seg-long.next::after { border-color: var(--danger); }
+  .seg.next .next-tag {
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    background: var(--teal); color: #fff; font-size: 9px; line-height: 1;
+    padding: 3px 6px; border-radius: 999px; white-space: nowrap;
+  }
+  .seg-long.next .next-tag { background: var(--danger); }
+  .seg-micro.next .ord { display: none; }
+  @keyframes pulse {
+    0% { opacity: .9; transform: scale(.97); }
+    70% { opacity: 0; transform: scale(1.06); }
+    100% { opacity: 0; }
+  }
+
+  /* 摘要行：一句话讲清一个循环 */
+  .cycle-caption {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px 10px; font-size: 11px; color: var(--text-dim); line-height: 1.5;
+  }
+  .cycle-caption .dot { color: var(--teal); }
+  .cycle-caption b { color: var(--teal-dark); font-weight: 600; }
+
+  /* 节奏行内控件区（新设计的控制行） */
+  .rhythm-row { gap: 12px; }
+  .rhythm-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .rhythm-controls .field { gap: 4px; }
+  .rhythm-controls .sep { color: var(--border); font-size: 12px; }
+  .rhythm-controls .phrase { font-size: 11px; color: var(--text-dim); }
+
+  /* 步进器（每 N 次微休息） */
+  .stepper {
+    display: inline-flex; align-items: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: hidden;
+  }
+  .stepper button {
+    width: 24px; height: 28px; border: none; background: transparent;
+    font-size: 14px; color: var(--teal-dark); cursor: pointer; line-height: 1;
+  }
+  .stepper button:hover { background: var(--teal-light); }
+  .stepper button:disabled { color: #c4ccd0; cursor: default; background: transparent; }
+  .stepper .num {
+    width: 26px; text-align: center; font-size: 14px; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--text);
+    border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    align-self: stretch; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* 空状态（两类休息都关闭） */
+  .cycle-empty {
+    padding: 22px 12px; text-align: center; color: var(--text-dim); font-size: 12px;
+  }
+
+  /* 评审标注（#clean 或正式实现时不出现） */
+  .anno {
+    display: inline-flex; width: 16px; height: 16px; border-radius: 50%;
+    background: #e8a33d; color: #fff; font-size: 10px; font-weight: 700;
+    align-items: center; justify-content: center; vertical-align: 1px;
+  }
+  .anno-legend {
+    margin-top: 14px; font-size: 12px; color: #7a6a2f; line-height: 2;
+    background: #fffbe8; border: 1px solid #eadfa8; border-radius: 10px; padding: 10px 14px;
+  }
+  body.clean .review-note, body.clean .review-label, body.clean .anno, body.clean .anno-legend { display: none; }
+</style>
+</head>
+<body>
+
+<div class="review-note">
+  <b>设计稿 · 仅供评审</b> —— 目标：把「微休息 / 长休息 / 周期」三者的关系画出来，不再靠文字脑补。
+  建议：用<b>方案</b>（下方新设计卡片）替换现有「微休息 + 长休息」两张卡片；
+  <b>提醒方式 / 推迟</b>等其余卡片不动。带<b>橙色数字徽标</b>的是评审标注，实现时不带。
+  数据模型不变：仍写 <code>microbreak / microbreakDuration / microbreakInterval / break / breakDuration / breakInterval</code> 六个键。
+</div>
+
+<!-- ============ 现状对照 ============ -->
+<div class="review-label">现状（问题：两卡分离，「每几个周期」不可视）</div>
+<section class="card" style="margin-bottom:4px;">
+  <h2>微休息</h2>
+  <div class="row">
+    <div class="row-text"><span class="row-title">休息时长</span><span class="row-desc">每次微休息持续的秒数</span></div>
+    <div class="field"><input type="number" value="20" /><span class="unit">秒</span></div>
+  </div>
+  <div class="row">
+    <div class="row-text"><span class="row-title">间隔</span><span class="row-desc">两次微休息之间的工作时长</span></div>
+    <div class="field"><input type="number" value="10" /><span class="unit">分钟</span></div>
+  </div>
+</section>
+<section class="card">
+  <h2>长休息</h2>
+  <div class="row">
+    <div class="row-text"><span class="row-title">休息时长</span><span class="row-desc">每次长休息持续的分钟数</span></div>
+    <div class="field"><input type="number" value="5" /><span class="unit">分钟</span></div>
+  </div>
+  <div class="row">
+    <div class="row-text"><span class="row-title">周期</span><span class="row-desc">每几个周期来一次长休息（其余为微休息）</span></div>
+    <div class="field"><input type="number" value="2" /><span class="unit">个周期</span></div>
+  </div>
+</section>
+
+<!-- ============ ★ 新设计 ============ -->
+<div class="review-label">新设计 —— 「休息节奏」卡片（可交互：改数字 / 开关会实时重画时间轴）</div>
+
+<section class="card">
+  <h2>休息节奏</h2>
+
+  <!-- 循环时间轴 -->
+  <div class="cycle-strip" id="strip"></div>
+  <div class="cycle-caption" id="caption"></div>
+
+  <!-- 微休息控制行 -->
+  <div class="row rhythm-row" id="rowMicro">
+    <label class="switch">
+      <input type="checkbox" id="cbMicro" checked />
+      <span class="slider"></span>
+    </label>
+    <div class="row-text" style="flex:1;">
+      <span class="row-title">微休息</span>
+      <span class="row-desc">短暂停顿，放松眼睛</span>
+    </div>
+    <div class="rhythm-controls">
+      <span class="phrase">每</span>
+      <div class="field"><input type="number" id="mi" value="10" min="1" max="120" /><span class="unit">分钟</span></div>
+      <span class="sep">·</span>
+      <span class="phrase">休息</span>
+      <div class="field"><input type="number" id="md" value="20" min="3" max="300" /><span class="unit">秒</span></div>
+    </div>
+  </div>
+
+  <!-- 长休息控制行 -->
+  <div class="row rhythm-row" id="rowLong">
+    <label class="switch">
+      <input type="checkbox" id="cbLong" checked />
+      <span class="slider"></span>
+    </label>
+    <div class="row-text" style="flex:1;">
+      <span class="row-title">长休息</span>
+      <span class="row-desc">更深度的放松 <span class="anno">2</span></span>
+    </div>
+    <div class="rhythm-controls">
+      <span class="phrase">每</span>
+      <div class="stepper">
+        <button id="nMinus" aria-label="减少">−</button>
+        <span class="num" id="nVal">2</span>
+        <button id="nPlus" aria-label="增加">+</button>
+      </div>
+      <span class="phrase">次微休息后</span>
+      <span class="sep">·</span>
+      <span class="phrase">休息</span>
+      <div class="field"><input type="number" id="bd" value="5" min="1" max="60" /><span class="unit">分钟</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="anno-legend">
+  <b>评审要点</b><br />
+  <span class="anno">1</span> 循环时间轴：一段 = 一个完整循环（工作 ①微 → 工作 ②微 → 工作 长 ↻），斜纹=工作、青色=微休息、赤陶色=长休息，宽度只是示意；<br />
+  <span class="anno">2</span> 「每 [− 2 +] 次微休息后」取代原来的「每几个周期」，步进器点一下，时间轴就多/少一段，范围 1–10（=1 时每次休息都是长休息）；<br />
+  <span class="anno">3</span> 摘要行自动换算「一个循环约 X 分钟」，单独启用一类时给出对应文案（如"长休息每 30 分钟一次"）；<br />
+  <span class="anno">4</span> 「下一次休息」脉冲圈：把顶部状态条的 status 事件（breakNumber/nextBreakKind）映射到时间轴上，设置页顺便变成循环进度指示；<br />
+  <span class="anno">5</span> 开关关闭对应类休息时，其段落从轴上消失、该行置灰（与现有 dimmed 交互一致）；全关时轴区显示空状态。
+</div>
+
+<script>
+  const state = { micro: true, long: true, mi: 10, md: 20, bd: 5, n: 2, nextKind: "micro2" };
+  const $ = (id) => document.getElementById(id);
+  const strip = $("strip"), caption = $("caption");
+
+  function fmtMin(m) { return m >= 1 ? (Number.isInteger(m) ? m : m.toFixed(1)) + " 分钟" : Math.round(m * 60) + " 秒"; }
+
+  function render() {
+    strip.innerHTML = "";
+    let roundMin = 0;
+    const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩";
+    const tag = (next, text) => next ? `<span class="next-tag">${text ?? "下一次"}</span>` : "";
+    const work = (next) => {
+      strip.insertAdjacentHTML("beforeend",
+        `<div class="seg seg-work ${next ? "next" : ""}">${tag(next)}<span class="seg-name">工作</span><span class="seg-val">${state.mi} 分钟</span></div>`);
+      roundMin += state.mi;
+    };
+    const micro = (i, next) => {
+      strip.insertAdjacentHTML("beforeend",
+        `<div class="seg seg-micro ${next ? "next" : ""}">${tag(next, `下一次 ${CIRCLED[i - 1]}`)}<span class="ord">${i}</span><span class="seg-name">微休息</span><span class="seg-val">${state.md} 秒</span></div>`);
+      roundMin += state.md / 60;
+    };
+    const long = (next) => {
+      strip.insertAdjacentHTML("beforeend",
+        `<div class="seg seg-long ${next ? "next" : ""}">${tag(next)}<span class="seg-name">长休息</span><span class="seg-val">${state.bd} 分钟</span></div>`);
+      roundMin += state.bd;
+    };
+    const loop = () => strip.insertAdjacentHTML("beforeend",
+      `<div class="seg seg-loop"><span class="loop-icon">↻</span><span class="loop-text">循环</span></div>`);
+
+    if (!state.micro && !state.long) {
+      strip.innerHTML = `<div class="cycle-empty">💤 休息已关闭 —— 小鹦鹉会一直陪着你工作</div>`;
+      caption.innerHTML = `<span class="dot">●</span> 两类休息都未启用，可随时打开下面的开关`;
+    } else if (state.micro && state.long) {
+      let nextLeft = state.nextKind; // nextKind: work | micro1..n | long
+      const take = (k) => { if (nextLeft === k) { nextLeft = "consumed"; return true; } return false; };
+      for (let i = 1; i <= state.n; i++) {
+        work(take("work"));
+        micro(i, take(`micro${i}`));
+      }
+      work(take("work")); // 长休息前最后一个工作段
+      long(take("long"));
+      loop();
+      caption.innerHTML = `<span class="dot">●</span> 一个循环 = ${state.n} 次微休息 + 1 次长休息，约 <b>${fmtMin(Math.round(roundMin))}</b>，然后重新开始`;
+    } else if (state.micro) {
+      work(state.nextKind === "work"); micro(1, state.nextKind !== "work"); loop();
+      caption.innerHTML = `<span class="dot">●</span> 只安排微休息：每工作 ${state.mi} 分钟休息 ${state.md} 秒，一直循环`;
+    } else {
+      work(state.nextKind === "work"); long(state.nextKind !== "work"); loop();
+      const every = state.mi * (state.n + 1);
+      caption.innerHTML = `<span class="dot">●</span> 只安排长休息：每 <b>${every} 分钟</b>（${state.mi} 分钟 × ${state.n + 1}）休息 ${state.bd} 分钟`;
+    }
+
+    // 行置灰 + 步进器边界
+    $("rowMicro").classList.toggle("dimmed", !state.micro);
+    $("rowLong").classList.toggle("dimmed", !state.long);
+    $("nVal").textContent = state.n;
+    $("nMinus").disabled = state.n <= 1;
+    $("nPlus").disabled = state.n >= 10;
+  }
+
+  $("cbMicro").addEventListener("change", (e) => { state.micro = e.target.checked; render(); });
+  $("cbLong").addEventListener("change", (e) => { state.long = e.target.checked; render(); });
+  $("nMinus").addEventListener("click", () => { state.n = Math.max(1, state.n - 1); render(); });
+  $("nPlus").addEventListener("click", () => { state.n = Math.min(10, state.n + 1); render(); });
+  $("mi").addEventListener("input", (e) => { state.mi = +e.target.value || 1; render(); });
+  $("md").addEventListener("input", (e) => { state.md = +e.target.value || 1; render(); });
+  $("bd").addEventListener("input", (e) => { state.bd = +e.target.value || 1; render(); });
+
+  if (location.hash === "#clean") document.body.classList.add("clean");
+  render();
+</script>
+</body>
+</html>
