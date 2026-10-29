@@ -22,7 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CLICK_QUOTES, PARTY_QUOTES, pick } from "./pet/quotes";
 import { PetPackEngine, type PetPack } from "./pet/petpack";
-import { setHitShape } from "./pet/pointer";
+import { setHitShape, isOnHitTarget } from "./pet/pointer";
 
 /** 连击彩蛋：连续点击次数（超时窗口内） */
 const COMBO_FOR_PARTY = 5;
@@ -34,20 +34,20 @@ function main(): void {
 
   /* ---------- 宠物包资源模式 + 皮肤热切换 ----------
    * 设置来源（优先级）：
-   *   1. URL 参数 ?pack=<id>（调试用，覆盖设置）
+   *   1. URL 参数 ?skin=svg|pack（调试用，覆盖设置；旧 ?pack=1 仍按 pack 理解）
    *   2. 设置项 petSkin（托盘/设置页切换，事件 pet-skin-changed 热切换）
-   * 皮肤值：svg=自绘鹦鹉；pack=宠物包视频直显（圆角贴纸）
+   * 皮肤值：svg=自绘鹦鹉（模板惰性挂载）；pack=宠物包视频直显（圆角贴纸）
    */
   const params = new URLSearchParams(location.search);
-  const urlSkin = params.get("pack");
+  const urlSkin = params.get("skin") ?? params.get("pack");
   if (urlSkin) {
-    // 调试参数：?pack=1 强制宠物包皮肤
-    void applySkin("pack");
+    // 调试参数：?skin=svg / ?skin=pack（?pack=1 等价 pack）强制指定皮肤
+    void applySkin(urlSkin === "svg" ? "svg" : "pack");
   } else {
-    // 初始皮肤：读设置，失败走 SVG
+    // 初始皮肤：读设置；读不到也按默认 pack 走（SVG 不做兜底，失败=透明+自动重试）
     void invoke<{ petSkin?: string }>("get_settings")
-      .then((s) => applySkin(s.petSkin ?? "svg"))
-      .catch(() => applySkin("svg"));
+      .then((s) => applySkin(s.petSkin ?? "pack"))
+      .catch(() => applySkin("pack"));
 
     // 托盘/设置页切换 → 热切换
     listen<string>("pet-skin-changed", (ev) => {
@@ -135,13 +135,17 @@ function main(): void {
     // 交互层挂了（极端情况，如非 Tauri 环境）：挂最简单的原生事件兜底，
     // 至少保留点击反应与彩蛋，不会变成点不动的白板
     console.warn("[pet] 交互层初始化失败，改用原生点击兜底:", err);
-    dom.hit.addEventListener("click", handlePetClick);
+    // SVG 命中椭圆收在模板里（此刻可能未挂载），且矩形命中层挂在 body 而非 root 下——
+    // 统一委托到 document + 命中判定，两个宿主无论挂在哪、何时出现都能收到
+    document.addEventListener("click", (e) => {
+      if (isOnHitTarget(e.target)) handlePetClick();
+    });
     const onContextMenu = (e: Event): void => {
+      if (!isOnHitTarget(e.target)) return;
       e.preventDefault();
       void invoke("popup_pet_menu").catch(() => {});
     };
-    dom.hit.addEventListener("contextmenu", onContextMenu);
-    dom.videoHit.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("contextmenu", onContextMenu);
   });
 
   // 页面卸载时清理（透明窗口常驻，一般走不到，聊胜于无）
@@ -159,122 +163,112 @@ let packStage: HTMLElement | null = null;
 let applySeq = 0; // 防竞态：只允许最后一次 applySkin 生效
 const DEFAULT_PACK = "cockatiel";
 
+/* ---------- 宠物包失败重试（不回退 SVG） ----------
+ * 明确要求：SVG 不做任何兜底，加载空挡也不出场。失败时面纱保持全透明，
+ * 指数退避重试——内存吃紧导致的加载/解码失败是瞬时性的，缓过来即自动恢复。 */
+const PACK_RETRY_FIRST_MS = 2000;
+const PACK_RETRY_MAX_MS = 60_000;
+let packRetryTimer = 0;
+let packRetryDelayMs = PACK_RETRY_FIRST_MS;
+
 interface SkinOpts {
   pack?: string;
 }
 
-/** 切换桌宠皮肤。svg=自绘；pack=宠物包双层引擎。 */
+/** 切换桌宠皮肤。svg=自绘（模板克隆挂载）；pack=宠物包双层引擎。 */
 async function applySkin(skin: string, opts: SkinOpts = {}): Promise<void> {
   const seq = ++applySeq;
+  window.clearTimeout(packRetryTimer); // 挂起的重试作废（本次调用即最新意图）
   const dom = getPetDom();
   currentSkin = skin;
 
-  // —— SVG 皮肤：清掉视频层，恢复 SVG ——
+  // —— SVG 皮肤：清掉视频层，克隆模板挂回鹦鹉，解冻状态机动效 ——
   if (skin === "svg") {
-    disposePack(dom);
+    disposePack();
+    dom.unmountSvg();
+    dom.mountSvg();
+    dom.stage.classList.remove("stage-frozen");
     setHitShape("ellipse");
     dom.videoHit.style.display = "none";
     dom.root.classList.remove("skin-pending");
+    packRetryDelayMs = PACK_RETRY_FIRST_MS;
     console.info("[pet] 皮肤: SVG 鹦鹉");
     return;
   }
 
   // —— 宠物包皮肤：读 manifest → 建双层引擎 ——
   const packId = opts.pack ?? DEFAULT_PACK;
+  // 半启动资源：成功才交付给全局；中途被顶掉/失败在各自路径就地清理
+  let stage: HTMLElement | null = null;
+  let engine: PetPackEngine | null = null;
   try {
     const res = await fetch(`/assets/pets/${packId}/manifest.json`);
     const pack: PetPack = await res.json();
     if (seq !== applySeq) return;
     if (!pack.assets.idle.length) throw new Error("宠物包没有待机动画");
 
-    // 清旧引擎，但 SVG 保持移出（即将再进视频模式，等待期不该闪现 SVG）
-    disposePack(dom, { keepSvgDetached: true });
-    // 先移出 SVG 再异步启动：引擎启动要等视频首帧（数百 ms），
-    // 若事后再 detach，等待期 SVG 在 DOM 里裸奔，合成器画一帧就是"闪默认 SVG"
-    detachSvgLayer(dom);
+    // 清旧引擎；SVG 彻底销毁。模板惰性挂载后 pack 模式下 SVG 节点从不存在，
+    // 合成器没有任何 SVG 帧纹理可缓存/闪现（内存吃紧偶现闪 SVG 的根治点）；
+    // 面纱继续兜住引擎启动等首帧的数百 ms 空挡——空挡保持全透明，不出场任何内容
+    disposePack();
+    dom.unmountSvg();
+    dom.stage.classList.add("stage-frozen");
 
-    const stage = document.createElement("div");
+    stage = document.createElement("div");
     stage.className = "pack-stage";
     // 挂 #pet-root（与 .pet-stage 平级）：脱离 .pet-inner 形变容器——
     // SVG 状态机的 act-tilt/跳跃等 transform 作用于 .pet-inner，视频在里面会被带着形变
     dom.root.appendChild(stage);
 
-    const engine = new PetPackEngine(pack, stage);
+    engine = new PetPackEngine(pack, stage);
     const ok = await engine.start();
-    if (seq !== applySeq) { engine.dispose(); stage.remove(); return; }
+    if (seq !== applySeq) {
+      engine.dispose();
+      stage.remove();
+      return;
+    }
     if (!ok) throw new Error("引擎启动失败");
 
+    // 成功交付全局（之后 catch 不再清理）
     packEngine = engine;
     packStage = stage;
+    stage = null;
+    engine = null;
 
-    // 视频模式接管：Zzz 深度隐藏（detachSvgLayer 已做），启用矩形命中层，揭面纱
+    // 视频模式接管：启用矩形命中层，揭面纱
     setHitShape("rect");
     dom.videoHit.style.display = "";
     dom.root.classList.remove("skin-pending");
+    packRetryDelayMs = PACK_RETRY_FIRST_MS;
 
     console.info(`[pet] 皮肤: 宠物包「${pack.name}」(${pack.id}) 待机×${pack.assets.idle.length} 交互×${pack.assets.interact.length}`);
   } catch (err) {
-    if (seq === applySeq) {
-      console.warn("[pet] 宠物包不可用，回退 SVG:", err);
-      disposePack(dom);
-      dom.root.classList.remove("skin-pending");
-    }
+    // 失败清理：半启动的引擎/舞台一并拆掉（此前只清全局引用，失败舞台会残留 DOM）
+    engine?.dispose();
+    stage?.remove();
+    if (seq !== applySeq) return;
+    // 不回退 SVG（明确要求）：面纱保持全透明，指数退避自动重试
+    console.warn(`[pet] 宠物包不可用（${String(err)}），${packRetryDelayMs}ms 后自动重试`);
+    schedulePackRetry(seq, opts);
   }
 }
 
-/** 清理宠物包引擎。keepSvgDetached=true 时 SVG 保持移出（pack→pack 重入，
- *  等待期不该露脸）；默认重挂 SVG（切回 SVG / 回退场景） */
-function disposePack(
-  dom: ReturnType<typeof getPetDom>,
-  opts: { keepSvgDetached?: boolean } = {},
-): void {
+/** 排定一次宠物包重试（seq 失效则不执行；延迟翻倍封顶，成功后复位） */
+function schedulePackRetry(seq: number, opts: SkinOpts): void {
+  const delay = packRetryDelayMs;
+  packRetryDelayMs = Math.min(packRetryDelayMs * 2, PACK_RETRY_MAX_MS);
+  packRetryTimer = window.setTimeout(() => {
+    if (seq !== applySeq) return;
+    void applySkin("pack", opts);
+  }, delay);
+}
+
+/** 清理宠物包引擎与舞台（SVG 归模板管，这里不碰） */
+function disposePack(): void {
   packEngine?.dispose();
   packEngine = null;
   packStage?.remove();
   packStage = null;
-  if (!opts.keepSvgDetached) reattachSvgLayer(dom);
-}
-
-/** SVG 移出 DOM + 冻结 stage 动画（视频模式）。幂等：重复调用只补冻结标记。
- *  根因①：display:none 的 SVG 仍带 CSS 动画，状态机 class 切换（act-tilt/act-blink）
- *  触发样式重算时，WebView2 合成器偶发把启动时的旧帧缓存错误上屏一帧。
- *  根因②：.pet-inner 是形变容器（歪头/跳跃 transform），视频曾挂其内被带着形变跳动。
- *  移出 DOM + 冻结动画 = 双隔离，视频与 SVG 各自独立 */
-let svgHome: { parent: HTMLElement; next: Node | null } | null = null;
-const detachedZzz: { el: HTMLElement; parent: HTMLElement; next: Node | null }[] = [];
-
-function detachSvgLayer(dom: ReturnType<typeof getPetDom>): void {
-  if (dom.svg.isConnected) {
-    svgHome = { parent: dom.svg.parentElement!, next: dom.svg.nextSibling };
-    dom.svg.remove();
-    // Zzz 归位信息只在实际移出时收集（重复调用不得清空已记录的归位信息）
-    detachedZzz.length = 0;
-    document.querySelectorAll<HTMLElement>(".zzz").forEach((el) => {
-      detachedZzz.push({ el, parent: el.parentElement!, next: el.nextSibling });
-      el.remove();
-    });
-  }
-  // 冻结 stage 全部动效（气泡除外——视频模式气泡仍要平滑显隐）
-  dom.stage.classList.add("stage-frozen");
-}
-
-/** SVG 插回原位、解冻 stage（切回 SVG 皮肤） */
-function reattachSvgLayer(dom: ReturnType<typeof getPetDom>): void {
-  dom.stage.classList.remove("stage-frozen");
-  if (svgHome && !dom.svg.isConnected) {
-    const next = svgHome.next?.isConnected ? svgHome.next : null;
-    svgHome.parent.insertBefore(dom.svg, next);
-    svgHome = null;
-  }
-  dom.svg.style.display = "";
-  for (const { el, parent, next } of detachedZzz) {
-    if (!el.isConnected) {
-      const anchor = next?.isConnected ? next : null;
-      parent.insertBefore(el, anchor);
-    }
-    el.style.display = "";
-  }
-  detachedZzz.length = 0;
 }
 
 main();

@@ -127,38 +127,43 @@ export class PetPackEngine {
     if (this.disposed) return false;
     // 代际令牌：并发换片时只允许最新一代提交，被顶掉的一代自清理（不留孤儿视频）
     const gen = ++this.bodyGen;
+    // 进行中标记：换片 await 期间挡住 idle 轮播抢拍（此前只有判定没有置位，形同虚设）
+    this.bodyBusy = true;
+    try {
+      // 优先领养预热视频（首帧已就绪，零延迟上屏）
+      const warm = this.warmBody.get(file);
+      if (warm instanceof PetVideoPlayer) {
+        this.warmBody.delete(file); // 出池即领养
+        warm.setHidden(false);
+        warm.play();
+        this.bodyPlayer?.destroy();
+        this.bodyPlayer = warm;
+        this.currentBodyFile = file;
+        this.currentState = state;
+        return true;
+      }
 
-    // 优先领养预热视频（首帧已就绪，零延迟上屏）
-    const warm = this.warmBody.get(file);
-    if (warm instanceof PetVideoPlayer) {
-      this.warmBody.delete(file); // 出池即领养
-      warm.setHidden(false);
-      warm.play();
+      const p = new PetVideoPlayer(this.base + file);
+      p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
+      const ok = await p.attach(this.bodyStage, { waitForFrame: true });
+      if (!ok) {
+        p.destroy();
+        return false;
+      }
+      if (gen !== this.bodyGen || this.disposed) {
+        p.destroy(); // 已被更新的换片顶掉：自杀，绝不上屏
+        return false;
+      }
+      // 同帧交接：新片亮相 → 旧片移除
+      p.setHidden(false);
       this.bodyPlayer?.destroy();
-      this.bodyPlayer = warm;
+      this.bodyPlayer = p;
       this.currentBodyFile = file;
       this.currentState = state;
       return true;
+    } finally {
+      this.bodyBusy = false;
     }
-
-    const p = new PetVideoPlayer(this.base + file);
-    p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
-    const ok = await p.attach(this.bodyStage, { waitForFrame: true });
-    if (!ok) {
-      p.destroy();
-      return false;
-    }
-    if (gen !== this.bodyGen || this.disposed) {
-      p.destroy(); // 已被更新的换片顶掉：自杀，绝不上屏
-      return false;
-    }
-    // 同帧交接：新片亮相 → 旧片移除
-    p.setHidden(false);
-    this.bodyPlayer?.destroy();
-    this.bodyPlayer = p;
-    this.currentBodyFile = file;
-    this.currentState = state;
-    return true;
   }
 
   private bodyGen = 0;
@@ -180,7 +185,10 @@ export class PetPackEngine {
     const tick = (): void => {
       if (this.disposed || this.dragging) return;
       if (this.currentState !== "idle") return; // 交互/拖动接管中，暂停轮播
-      if (this.bodyBusy) return; // 换片进行中（含 dragStart 的 fly attach），勿抢
+      if (this.bodyBusy) { // 换片进行中（含 dragStart 的 fly attach），稍后再试
+        this.idleTimer = window.setTimeout(tick, 300);
+        return;
+      }
       const file = this.pickIdle();
       void this.playBody(file, "idle").then((ok) => {
         if (!ok) console.warn(`[petpack] 待机片 ${file} 加载失败，跳过`);

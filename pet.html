@@ -7,9 +7,9 @@
     <title>Perchly 桌宠</title>
   </head>
   <body>
-    <!-- 桌宠根容器：全部 UI 由 TS 加 class 驱动，SVG 骨架静态写在下面，方便 CSS/动画定位 -->
-    <!-- skin-pending：启动面纱——皮肤未定前整体不可见（防 pack 模式先画一帧 SVG，
-         被 WebView2 合成器缓存成旧帧，之后偶发闪现），applySkin 就绪后摘除 -->
+    <!-- 桌宠根容器：全部 UI 由 TS 加 class 驱动，SVG 骨架收在 template 里按需克隆 -->
+    <!-- skin-pending：启动面纱——皮肤就绪前整体保持透明。pack 模式的加载/重试空挡
+         同样靠它保持全透明（空挡不填充任何内容），applySkin 就绪后摘除 -->
     <div id="pet-root" class="skin-pending">
       <div class="pet-stage is-idle" id="pet-stage">
         <!-- 打瞌睡的 Zzz（sleepy 基态下由 CSS 动画飘起） -->
@@ -26,7 +26,10 @@
             Q 版玄凤鹦鹉：灰身、黄冠羽、橙红脸颊、长尾。纯 SVG 手绘，无外部资源。
             画布 220x220；身体中心约 (104,152)，脚底 y≈204。
             层次（先画在下）：阴影 → 尾羽 → 左翅 → 身体 → 右翅 → 脚 → 脸颊 → 冠羽 → 眉 → 眼 → 嘴 → 派对帽 → 命中区
+            模板惰性挂载：仅 svg 皮肤时由 dom.ts 克隆进 .pet-inner。pack 模式下 SVG 节点
+            完全不存在——合成器无从取得/闪现 SVG 帧纹理（内存吃紧时偶现闪 SVG 的根治手段）。
           -->
+          <template id="pet-svg-tpl">
           <svg id="pet-svg" class="pet-svg" viewBox="0 0 220 220" aria-hidden="true">
             <defs>
               <!-- 身体柔和渐变 -->
@@ -130,6 +133,7 @@
             <!-- 命中区：鼠标穿透判定的身体范围，透明填充保证可命中 -->
             <ellipse class="pet-hit" cx="104" cy="152" rx="60" ry="64" fill="transparent" />
           </svg>
+          </template>
         </div>
       </div>
     </div>

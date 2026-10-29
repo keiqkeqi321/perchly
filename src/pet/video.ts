@@ -9,6 +9,10 @@
  * 不做色距抠像——深灰背景视频的眼珠与背景色距过近，抠像必掉眼睛（实证见 DEVLOG）。
  */
 
+/** 等首帧上屏的兜底超时：内存吃紧时解码器可能长时间不给帧，
+ *  不能让挂起方（引擎启动/换片）永远等下去——超时先放行 */
+const FIRST_FRAME_TIMEOUT_MS = 2000;
+
 export class PetVideoPlayer {
   private video: HTMLVideoElement;
 
@@ -34,10 +38,19 @@ export class PetVideoPlayer {
     if (!this.video.videoWidth) return false; // 加载失败
     this.play();
     if (opts.waitForFrame && "requestVideoFrameCallback" in this.video) {
-      // 等第一帧解码上屏（对旧浏览器/WebView 降级为立即返回）
+      // 等第一帧解码上屏（对旧浏览器/WebView 降级为立即返回）；
+      // 与超时竞速：帧不来就放行，宁可稍后补帧也不能挂死换片流程
       await new Promise<void>((res) => {
+        let settled = false;
+        const done = (): void => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          res();
+        };
+        const timer = window.setTimeout(done, FIRST_FRAME_TIMEOUT_MS);
         (this.video as HTMLVideoElement & { requestVideoFrameCallback(cb: () => void): number })
-          .requestVideoFrameCallback(() => res());
+          .requestVideoFrameCallback(() => done());
       });
     }
     return true;

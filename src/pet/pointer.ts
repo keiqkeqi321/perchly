@@ -39,8 +39,10 @@ export function setHitShape(shape: HitShape): void {
   hitShape = shape;
 }
 
-/** 命中元素的判定（事件 target 在椭圆或矩形命中层上都算"在身上"） */
-function isHitTarget(target: EventTarget | null): boolean {
+/** 命中元素的判定（事件 target 在椭圆或矩形命中层上都算"在身上"）。
+ *  导出给 pet.ts 的原生兜底用；双宿主都可能不在 DOM（SVG 收在模板里惰性挂载），
+ *  统一走 document 委托 + 本判定，宿主何时出现都无需重绑 */
+export function isOnHitTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     (target.closest(".pet-hit") !== null || target.closest("#pet-video-hit") !== null)
@@ -172,7 +174,7 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
 
   /** 接收模式下的 mousemove 快速路径：target 离开命中区 → 立刻恢复穿透 */
   function onFastMousemove(e: MouseEvent): void {
-    if (!isHitTarget(e.target)) void enterPassthrough();
+    if (!isOnHitTarget(e.target)) void enterPassthrough();
   }
 
   function bindMousemove(): void {
@@ -213,67 +215,69 @@ export async function setupPointer(dom: PetDom, handlers: PointerHandlers): Prom
   }
 
   // pointerdown：记录起点；等 move 超阈值再 startDragging，< 5px 仍算点击
-  // 双宿主：SVG 椭圆 + 视频矩形层（宠物包皮肤时 SVG 已移出 DOM，椭圆收不到事件）
-  const hitHosts: (Element & GlobalEventHandlers)[] = [dom.hit, dom.videoHit];
-  for (const host of hitHosts) {
-    host.addEventListener("pointerdown", (e: PointerEvent) => {
-      if (e.button !== 0) return; // 只处理左键
-      pressed = true;
-      dragged = false;
-      downX = e.clientX;
-      downY = e.clientY;
-    });
-    host.addEventListener("pointermove", (e: PointerEvent) => {
-      if (!pressed || dragged) return;
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
-        dragged = true;
-        handlers.onDragStart?.();
-        void invoke("set_pet_drag", { active: true }).catch(() => {});
-        win
-          .startDragging()
-          .then(() => void confirmDragEnd())
-          .catch((err) => {
-            console.warn("[pet] startDragging 失败:", err);
-            void finishDrag();
-          });
-      }
-    });
-
-    /** 拖动结束确认：startDragging 可能因事件竞争提前 resolve（人还按着），
-     *  用左键物理状态确认真正松手后才触发 onDragEnd（防飞翔被提前切走） */
-    async function confirmDragEnd(): Promise<void> {
-      for (let i = 0; i < 125; i++) { // 最多 ~10s 保险
-        try {
-          const down = await invoke<boolean>("left_button_down");
-          if (!down) break; // 左键真的抬起了
-        } catch {
-          break; // 查询失败（非 Windows 真机）：退化为立即结束
-        }
-        await new Promise((r) => setTimeout(r, 80));
-      }
-      await finishDrag();
+  // 委托到 document + 命中判定（双宿主 SVG 椭圆 / 视频矩形层——SVG 模板惰性挂载，
+  // 挂载时机不定，委托使两宿主何时出现都能收到事件，也免去逐宿主绑/解）
+  document.addEventListener("pointerdown", (e: PointerEvent) => {
+    if (!isOnHitTarget(e.target)) return; // 只认命中区（与旧宿主监听等价）
+    if (e.button !== 0) return; // 只处理左键
+    pressed = true;
+    dragged = false;
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  // move/up 不做命中判定：拖拽/点击过程中指针允许离开命中区，跟踪不能断
+  document.addEventListener("pointermove", (e: PointerEvent) => {
+    if (!pressed || dragged) return;
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) {
+      dragged = true;
+      handlers.onDragStart?.();
+      void invoke("set_pet_drag", { active: true }).catch(() => {});
+      win
+        .startDragging()
+        .then(() => void confirmDragEnd())
+        .catch((err) => {
+          console.warn("[pet] startDragging 失败:", err);
+          void finishDrag();
+        });
     }
+  });
 
-    async function finishDrag(): Promise<void> {
-      savePositionAfterDrag();
-      void invoke("set_pet_drag", { active: false }).catch(() => {});
-      handlers.onDragEnd?.();
+  /** 拖动结束确认：startDragging 可能因事件竞争提前 resolve（人还按着），
+   *  用左键物理状态确认真正松手后才触发 onDragEnd（防飞翔被提前切走） */
+  async function confirmDragEnd(): Promise<void> {
+    for (let i = 0; i < 125; i++) { // 最多 ~10s 保险
+      try {
+        const down = await invoke<boolean>("left_button_down");
+        if (!down) break; // 左键真的抬起了
+      } catch {
+        break; // 查询失败（非 Windows 真机）：退化为立即结束
+      }
+      await new Promise((r) => setTimeout(r, 80));
     }
-    host.addEventListener("pointerup", (e: PointerEvent) => {
-      if (!pressed) return;
-      pressed = false;
-      if (dragged) return; // 拖拽结束不算点击
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) return; // 保险
-      handlers.onClick();
-    });
-    host.addEventListener("pointercancel", () => {
-      pressed = false;
-      dragged = false;
-    });
-    // 右键：托盘同款菜单（preventDefault 防 WebView2 默认菜单/选中文案）
-    host.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      handlers.onContextMenu?.();
-    });
+    await finishDrag();
   }
+
+  async function finishDrag(): Promise<void> {
+    savePositionAfterDrag();
+    void invoke("set_pet_drag", { active: false }).catch(() => {});
+    handlers.onDragEnd?.();
+  }
+
+  document.addEventListener("pointerup", (e: PointerEvent) => {
+    if (!pressed) return;
+    pressed = false;
+    if (dragged) return; // 拖拽结束不算点击
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) >= DRAG_THRESHOLD_PX) return; // 保险
+    handlers.onClick();
+  });
+  document.addEventListener("pointercancel", () => {
+    pressed = false;
+    dragged = false;
+  });
+  // 右键：托盘同款菜单（preventDefault 防 WebView2 默认菜单/选中文案）
+  document.addEventListener("contextmenu", (e) => {
+    if (!isOnHitTarget(e.target)) return;
+    e.preventDefault();
+    handlers.onContextMenu?.();
+  });
 }
