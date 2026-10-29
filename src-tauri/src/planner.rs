@@ -322,7 +322,18 @@ impl Planner {
 
     // ============ 暂停/恢复/清除（L210-249） ============
 
+    /// 清空计时。若正在休息（遮罩显示中），先关遮罩——Reset/Pause 等显式命令
+    /// 踩掉 Finish deadline 时必须连带收掉遮罩，否则全屏卡住直到下个休息顶替。
+    /// （IdleCleared/NaturalBreakFinished 有守卫，不会带 Finish 相位走到这里。）
     fn clear(&mut self) {
+        if self
+            .deadline
+            .as_ref()
+            .map(|d| d.phase.is_finish_phase())
+            .unwrap_or(false)
+        {
+            overlay::hide(&self.app);
+        }
         self.deadline = None;
         self.break_number = 0;
         self.postpones = 0;
@@ -346,14 +357,17 @@ impl Planner {
         self.announce("status");
     }
 
-    /// 守卫：进行中的休息不被外部事件打断（L34）
+    /// 守卫：进行中的休息不被外部事件打断（L34）。
+    /// deadline=None（未在计时——长空闲 IdleCleared 之后、或两类休息都关着）没有
+    /// 保护对象，必须放行：否则长空闲回来的 NaturalBreakFinished 被守卫拦下，
+    /// next_break 不执行，永远停在「未在计时」（游标冻结）。
     fn interrupt_guard_ok(&self) -> bool {
         !self.paused
             && self
                 .deadline
                 .as_ref()
                 .map(|d| !d.phase.is_finish_phase())
-                .unwrap_or(false)
+                .unwrap_or(true)
     }
 
     // ============ 主循环 ============
@@ -420,7 +434,10 @@ impl Planner {
                     }
                 }
                 Ok(Cmd::SettingsChanged) => {
-                    if !p.paused {
+                    // 守卫：休息进行中不改排——next_break 会踩掉 Finish deadline，
+                    // 遮罩永远等不到关闭（表现为全屏休息卡住）。新设置在休息结束后的
+                    // next_break 里自然生效（届时读的是最新配置）。
+                    if !p.paused && p.interrupt_guard_ok() {
                         p.next_break();
                         p.announce("status");
                     }
