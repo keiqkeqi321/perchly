@@ -69,13 +69,18 @@ fn update_settings(
     patch: serde_json::Value,
     ctx: tauri::State<AppCtx>,
 ) -> Result<(), String> {
-    // petSkin 前后值（锁各自短作用域：rebuild 内部会再锁 store，std Mutex 不可重入）
-    let skin_before = ctx.store.lock().unwrap().settings.pet_skin;
+    // 前后值（锁各自短作用域：rebuild 内部会再锁 store，std Mutex 不可重入）
+    let (skin_before, pet_before) = {
+        let g = ctx.store.lock().unwrap();
+        (g.settings.pet_skin, g.settings.pet_enabled)
+    };
     {
         let mut guard = ctx.store.lock().unwrap();
         guard.update(patch)?;
     }
-    let skin_after = ctx.store.lock().unwrap().settings.pet_skin;
+    let g = ctx.store.lock().unwrap();
+    let (skin_after, pet_after) = (g.settings.pet_skin, g.settings.pet_enabled);
+    drop(g);
 
     // petSkin 实际变化 → 通知桌宠热切换 + 刷新托盘勾选。
     // 此前设置页路径不发事件，皮肤要重启才变；且设置页先改后托盘点同名项会被
@@ -86,8 +91,30 @@ fn update_settings(
         crate::tray::rebuild(&app);
     }
 
+    // petEnabled 实际变化 → 立即显隐窗口（此前只落盘不生效，重启才应用，
+    // 表现为"设置页开关不好使"；托盘是即时切换——两条路现已统一）
+    if pet_before != pet_after {
+        apply_pet_enabled(&app, pet_after);
+    }
+
     let _ = ctx.tx.send(Cmd::SettingsChanged);
     Ok(())
+}
+
+/// 桌宠显隐统一生效点：窗口即时显隐 + 托盘菜单文案刷新 + 广播事件（设置页同步开关 UI）。
+/// 调用方负责先持久化 petEnabled（update_settings 随 patch 写入 / 托盘菜单单独写）。
+pub fn apply_pet_enabled(app: &tauri::AppHandle, enabled: bool) {
+    use tauri::Emitter;
+    if let Some(w) = app.get_webview_window("pet") {
+        if enabled {
+            let _ = w.show();
+            let _ = w.set_focus();
+        } else {
+            let _ = w.hide();
+        }
+    }
+    let _ = app.emit("pet-visibility-changed", enabled);
+    crate::tray::rebuild(app);
 }
 
 #[tauri::command]
@@ -195,7 +222,8 @@ pub fn run() {
                 });
             }
 
-            // 桌宠：恢复上次位置（须在托盘构建前落定显隐，菜单「显示/隐藏桌宠」文案才准确）
+            // 桌宠：恢复上次位置；禁用则先隐藏（菜单文案已按 petEnabled 渲染，
+            // 这里先隐藏只为避免桌宠闪现一帧）
             if let Some(w) = app.get_webview_window("pet") {
                 if let (Some(x), Some(y)) = (s.pet_pos_x, s.pet_pos_y) {
                     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));

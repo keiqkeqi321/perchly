@@ -419,6 +419,21 @@ async function main(): Promise<void> {
   } catch (e) {
     console.error("listen status failed:", e);
   }
+
+  // 桌宠显隐/皮肤也可能从托盘或桌宠右键菜单改：监听广播同步本页 UI。
+  // 只改控件显示不回写保存（否则事件回声会再触发一轮 update_settings）
+  const petEnabledEl = document.querySelector<HTMLInputElement>('[data-setting="petEnabled"]');
+  const petSkinEl = document.querySelector<HTMLSelectElement>('[data-setting="petSkin"]');
+  try {
+    await listen<boolean>("pet-visibility-changed", (ev) => {
+      if (petEnabledEl && petEnabledEl.checked !== ev.payload) petEnabledEl.checked = ev.payload;
+    });
+    await listen<string>("pet-skin-changed", (ev) => {
+      if (petSkinEl && petSkinEl.value !== ev.payload) petSkinEl.value = ev.payload;
+    });
+  } catch (e) {
+    console.error("listen pet events failed:", e);
+  }
   // 打开页面时主动拉一次快照立即渲染——否则等待期无广播，占位符会挂到下一次阶段切换
   try {
     const snapshot = await invoke<StatusPayload | null>("get_status");

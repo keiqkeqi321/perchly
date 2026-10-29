@@ -29,14 +29,11 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
     let pause_forever = MenuItem::with_id(app, "pause_forever", "暂停（无限期）", true, None::<&str>).unwrap();
     let resume = MenuItem::with_id(app, "resume", "恢复", true, None::<&str>).unwrap();
 
-    // —— 桌宠显隐（随可见性翻转文案：可见时提供"隐藏"，隐藏时提供"显示"）——
-    let pet_visible = app
-        .get_webview_window("pet")
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false);
+    // —— 桌宠显隐（文案随 petEnabled 翻转：设置是唯一事实源，
+    //    显隐变化都走 apply_pet_enabled 即时同步窗口与设置，两者不脱钩）——
     let show_pet = MenuItem::with_id(
         app, "show_pet",
-        if pet_visible { "隐藏桌宠" } else { "显示桌宠" },
+        if s.pet_enabled { "隐藏桌宠" } else { "显示桌宠" },
         true, None::<&str>,
     ).unwrap();
 
@@ -123,16 +120,16 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
         "pause_forever" => { let _ = tx.send(Cmd::Pause(None)); }
         "resume" => { let _ = tx.send(Cmd::Resume); }
         "show_pet" => {
-            // 显隐切换（菜单文案随可见性翻转；双击隐藏已移除，这里是桌宠唯一显隐入口）
-            if let Some(w) = app.get_webview_window("pet") {
-                if w.is_visible().unwrap_or(false) {
-                    let _ = w.hide();
-                } else {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+            // 显隐切换：与设置页开关同一逻辑（petEnabled 唯一事实源：
+            // 持久化 + 立即生效 + 广播事件同步设置页 UI，重启后状态一致。
+            // 此前只切窗口不落盘——重启桌宠复活，且设置页开关只落盘不生效）
+            let next = !crate::settings::current(app).pet_enabled;
+            if let Some(ctx) = app.try_state::<crate::AppCtx>() {
+                let _ = ctx.store.lock().unwrap().update(
+                    serde_json::json!({ "petEnabled": next })
+                );
             }
-            rebuild(app);
+            crate::apply_pet_enabled(app, next);
         }
         "skin_svg" | "skin_pack" => {
             // 写设置 + 通知桌宠窗口热切换 + 重建菜单刷新勾选
