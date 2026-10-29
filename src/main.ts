@@ -454,6 +454,22 @@ async function main(): Promise<void> {
   }
   window.setInterval(interpolateTick, 500);
 
+  // 状态轮询兜底：planner 线程的 app.emit 跨线程投递在 tao event proxy 层
+  // 存在环境性抖动（同代码有时整会话收不到事件，2026-10-29 实测两实例复现），
+  // 而 invoke 通道从未失败。每秒以 get_status 为事实锚点重渲染：
+  // 事件正常时轮询只是校正插值漂移；事件失联时轮询独立维持页面活性
+  // （含 IdleCleared 进入"未在计时"这类原本不发事件的转换）。
+  window.setInterval(async () => {
+    try {
+      const st = await invoke<StatusPayload | null>("get_status");
+      if (st && typeof st.phase === "string") {
+        renderStatus(st);
+      }
+    } catch {
+      // 单次轮询失败静默（页面存活期间后端不会消失）
+    }
+  }, 1000);
+
   // 窗口隐藏时保底解绑（X 只隐藏不销毁，通常无需清理；这里防御性处理）
   window.addEventListener("pagehide", () => unlisten?.());
 }

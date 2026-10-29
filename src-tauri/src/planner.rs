@@ -54,7 +54,10 @@ impl Planner {
     }
 
     fn emit(&self, kind: &str, data: serde_json::Value) {
-        let _ = self.app.emit("planner", json!({ "type": kind, "data": data }));
+        // 跨线程 emit 偶发投递失败（前端有 1s get_status 轮询兜底），错误记录便于观察
+        if let Err(e) = self.app.emit("planner", json!({ "type": kind, "data": data })) {
+            eprintln!("perchly: planner emit failed: {e}");
+        }
     }
 
     fn status(&self) -> serde_json::Value {
@@ -73,7 +76,12 @@ impl Planner {
             "paused": self.paused,
             "breakNumber": self.break_number,
             "postpones": self.postpones,
-            "nextBreakKind": self.scheduled_kind().map(|k| format!("{k:?}")),
+            // 小写枚举名对齐前端 kindMap（format!("{k:?}") 会产出 "Micro"/"Long"，
+            // 前端查表 miss 后直接把英文裸串显示出来）
+            "nextBreakKind": self.scheduled_kind().map(|k| match k {
+                BreakKind::Micro => "micro",
+                BreakKind::Long => "long",
+            }),
         })
     }
 
@@ -94,7 +102,9 @@ impl Planner {
 
     fn announce(&mut self, event: &str) {
         self.emit(event, json!({ "status": self.status() }));
-        self.emit("status", self.status());
+        if let Err(e) = self.app.emit("status", self.status()) {
+            eprintln!("perchly: planner status emit failed: {e}");
+        }
         self.refresh_shared();
     }
 
