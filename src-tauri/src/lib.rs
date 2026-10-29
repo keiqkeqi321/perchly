@@ -17,6 +17,8 @@ struct AppCtx {
     tx: mpsc::Sender<Cmd>,
     store: Arc<Mutex<SettingsStore>>,
     current_break: Arc<Mutex<Option<BreakInfo>>>,
+    /// planner 状态快照（planner 线程每秒 tick / 每次切换时更新；get_status 读）
+    planner_status: Arc<Mutex<serde_json::Value>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -53,6 +55,12 @@ fn get_current_break(ctx: tauri::State<AppCtx>) -> Option<BreakInfo> {
 fn get_settings(ctx: tauri::State<AppCtx>) -> serde_json::Value {
     let guard = ctx.store.lock().unwrap();
     serde_json::to_value(&guard.settings).unwrap()
+}
+
+/// planner 当前状态快照：设置页打开时立即渲染状态条（等待期无广播，等第一个事件要几分钟）
+#[tauri::command]
+fn get_status(ctx: tauri::State<AppCtx>) -> serde_json::Value {
+    ctx.planner_status.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -133,6 +141,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            get_status,
             update_settings,
             get_current_break,
             skip_current,
@@ -155,14 +164,23 @@ pub fn run() {
             let store = Arc::new(Mutex::new(SettingsStore::load(app.handle())));
             let (tx, rx) = mpsc::channel::<Cmd>();
             let current_break: Arc<Mutex<Option<BreakInfo>>> = Arc::new(Mutex::new(None));
+            let planner_status: Arc<Mutex<serde_json::Value>> =
+                Arc::new(Mutex::new(serde_json::Value::Null));
 
             // 先 manage 再启动 planner 线程（overlay::show 需要读到 AppCtx，消除竞态）
-            app.manage(AppCtx { tx: tx.clone(), store: store.clone(), current_break: current_break.clone() });
+            app.manage(AppCtx {
+                tx: tx.clone(),
+                store: store.clone(),
+                current_break: current_break.clone(),
+                planner_status: planner_status.clone(),
+            });
 
             // planner 状态机线程（唯一权威）
             let planner_store = store.clone();
             let planner_app = app.handle().clone();
-            std::thread::spawn(move || Planner::run(planner_app, planner_store, rx));
+            std::thread::spawn(move || {
+                Planner::run(planner_app, planner_store, planner_status, rx)
+            });
 
             // 空闲监视线程（自然休息）
             let s = store.lock().unwrap().settings.clone();

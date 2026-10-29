@@ -42,6 +42,10 @@ pub struct Planner {
     break_number: u32,
     postpones: u32,
     paused: bool,
+    /// 状态快照（get_status IPC 读）：等待期无广播，设置页打开时靠它立即渲染
+    snapshot: Arc<Mutex<serde_json::Value>>,
+    /// 上一次 tooltip 文本（每秒 tick 时变化才真正 set，省系统调用）
+    last_tooltip: String,
 }
 
 impl Planner {
@@ -91,28 +95,45 @@ impl Planner {
     fn announce(&mut self, event: &str) {
         self.emit(event, json!({ "status": self.status() }));
         self.emit("status", self.status());
-        if let Some(text) = self.tooltip_text() {
+        self.refresh_shared();
+    }
+
+    /// 刷新共享快照 + 托盘 tooltip。announce 与每秒 tick 都走这里；
+    /// 不广播事件——前端有本地插值，无需高频推送。
+    fn refresh_shared(&mut self) {
+        *self.snapshot.lock().unwrap() = self.status();
+        let text = self.tooltip_text();
+        if text != self.last_tooltip {
+            self.last_tooltip = text.clone();
             tray::set_tooltip(&self.app, &text);
         }
     }
 
-    fn tooltip_text(&self) -> Option<String> {
-        let s = self.s();
+    fn tooltip_text(&self) -> String {
         if self.paused {
-            return Some("已暂停".into());
+            return "已暂停".into();
         }
-        let d = self.deadline.as_ref()?;
-        let ms = match d.phase {
-            Phase::StartMicrobreakNotification | Phase::StartBreakNotification => {
-                d.remaining().as_millis() as u64
-                    + match d.phase {
-                        Phase::StartMicrobreakNotification => s.microbreak_notification_interval,
-                        _ => s.break_notification_interval,
-                    }
-            }
-            _ => d.remaining().as_millis() as u64,
+        let fmt = |ms: u64| format!("{}:{:02}", ms / 60000, (ms % 60000) / 1000);
+        let Some(d) = self.deadline.as_ref() else {
+            return "未在计时".into();
         };
-        Some(format!("下一次休息 {}:{:02}", ms / 60000, (ms % 60000) / 1000))
+        let s = self.s();
+        let rem = d.remaining().as_millis() as u64;
+        match d.phase {
+            // 休息进行中：显示本次休息剩余
+            Phase::FinishMicrobreak => format!("微休息中 {}", fmt(rem)),
+            Phase::FinishBreak => format!("长休息中 {}", fmt(rem)),
+            // 开了通知的等待期：到通知触发还要 rem，通知本身再占 notif_int
+            Phase::StartMicrobreakNotification => {
+                format!("下一次微休息 {}", fmt(rem + s.microbreak_notification_interval))
+            }
+            Phase::StartBreakNotification => {
+                format!("下一次长休息 {}", fmt(rem + s.break_notification_interval))
+            }
+            // 通知进行中（到点即休息）/ 未开通知的整段等待：remaining 即答案
+            Phase::StartMicrobreak | Phase::StartBreak => format!("下一次休息 {}", fmt(rem)),
+            Phase::ResumeBreaks => "已暂停".into(),
+        }
     }
 
     // ============ 触发处理（对应 EventEmitter 回调） ============
@@ -120,39 +141,41 @@ impl Planner {
     fn on_deadline(&mut self) {
         let phase = self.deadline.as_ref().unwrap().phase;
         match phase {
+            // 注意：先挂好新 deadline 再 announce——广播出去的 status 必须是新阶段，
+            // 否则前端拿到的是刚结束的旧阶段（remaining=0/progress=100%），插值全推不动
             Phase::StartMicrobreakNotification => {
                 let s = self.s();
-                self.announce("microbreak-notification");
                 self.deadline = Some(Deadline::after(
                     Phase::StartMicrobreak,
                     Duration::from_millis(s.microbreak_notification_interval),
                 ));
+                self.announce("microbreak-notification");
             }
             Phase::StartBreakNotification => {
                 let s = self.s();
-                self.announce("break-notification");
                 self.deadline = Some(Deadline::after(
                     Phase::StartBreak,
                     Duration::from_millis(s.break_notification_interval),
                 ));
+                self.announce("break-notification");
             }
             Phase::StartMicrobreak => {
                 let s = self.s();
                 overlay::show(&self.app, BreakKind::Micro, &s);
-                self.announce("microbreak-started");
                 self.deadline = Some(Deadline::after(
                     Phase::FinishMicrobreak,
                     Duration::from_millis(s.microbreak_duration),
                 ));
+                self.announce("microbreak-started");
             }
             Phase::StartBreak => {
                 let s = self.s();
                 overlay::show(&self.app, BreakKind::Long, &s);
-                self.announce("break-started");
                 self.deadline = Some(Deadline::after(
                     Phase::FinishBreak,
                     Duration::from_millis(s.break_duration),
                 ));
+                self.announce("break-started");
             }
             Phase::FinishMicrobreak | Phase::FinishBreak => {
                 let kind = if matches!(phase, Phase::FinishMicrobreak) {
@@ -167,8 +190,8 @@ impl Planner {
             }
             Phase::ResumeBreaks => {
                 self.paused = false;
-                self.announce("resumed");
                 self.next_break();
+                self.announce("resumed");
                 self.announce("status");
             }
         }
@@ -317,8 +340,9 @@ impl Planner {
     fn resume(&mut self) {
         self.deadline = None;
         self.paused = false;
-        self.announce("resumed");
+        // 先重排再 announce：resumed 附带的 status 应是新周期，而不是空的 none
         self.next_break();
+        self.announce("resumed");
         self.announce("status");
     }
 
@@ -337,17 +361,30 @@ impl Planner {
     pub fn run(
         app: AppHandle,
         store: Arc<Mutex<SettingsStore>>,
+        snapshot: Arc<Mutex<serde_json::Value>>,
         rx: std::sync::mpsc::Receiver<Cmd>,
     ) {
-        let mut p = Self { app, store, deadline: None, break_number: 0, postpones: 0, paused: false };
+        let mut p = Self {
+            app,
+            store,
+            deadline: None,
+            break_number: 0,
+            postpones: 0,
+            paused: false,
+            snapshot,
+            last_tooltip: String::new(),
+        };
         p.next_break();
         p.announce("status");
         loop {
+            // 等待上限 1s：即使整个等待期无命令、无广播，也每秒 tick 一次，
+            // 刷新托盘 tooltip 与 get_status 快照（等待期可达数十分钟，不 tick 就冻结在旧值）
             let wait = match &p.deadline {
                 Some(d) => d.remaining(),
-                None => Duration::from_secs(3600),
-            };
-            match rx.recv_timeout(wait.min(Duration::from_secs(3600))) {
+                None => Duration::from_secs(1),
+            }
+            .min(Duration::from_secs(1));
+            match rx.recv_timeout(wait) {
                 Ok(Cmd::NextBreak) => {
                     p.next_break();
                     p.announce("status");
@@ -393,6 +430,9 @@ impl Planner {
                     let due = p.deadline.as_ref().map(|d| d.remaining().is_zero()).unwrap_or(false);
                     if due {
                         p.on_deadline();
+                    } else {
+                        // 每秒 tick：只刷 tooltip/快照，不广播（前端本地插值）
+                        p.refresh_shared();
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,

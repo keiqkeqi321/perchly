@@ -119,15 +119,21 @@ function formatClock(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** phase 枚举 → 中文（对应 scheduler.rs 的 Phase） */
+/**
+ * phase 枚举 → 中文（对应 scheduler.rs 的 Phase）。
+ * 注意：planner 在切换时就广播新阶段（先挂新 deadline 再 announce），
+ * 所以这些文案描述的是「正在进行的阶段」：
+ *   StartXNotification / StartX = 下一次休息的等待期（含通知期）
+ *   FinishX = 休息进行中
+ */
 const PHASE_LABELS: Record<string, string> = {
   none: "未在计时",
-  StartMicrobreakNotification: "微休息即将开始",
-  StartMicrobreak: "微休息中",
-  FinishMicrobreak: "微休息结束",
-  StartBreakNotification: "长休息即将开始",
-  StartBreak: "长休息中",
-  FinishBreak: "长休息结束",
+  StartMicrobreakNotification: "工作中",
+  StartMicrobreak: "工作中",
+  FinishMicrobreak: "微休息中",
+  StartBreakNotification: "工作中",
+  StartBreak: "工作中",
+  FinishBreak: "长休息中",
   ResumeBreaks: "恢复计时",
 };
 
@@ -263,6 +269,15 @@ async function main(): Promise<void> {
     unlisten = await listen<StatusPayload>("status", (ev) => renderStatus(ev.payload));
   } catch (e) {
     console.error("listen status failed:", e);
+  }
+  // 打开页面时主动拉一次快照立即渲染——否则等待期无广播，占位符会挂到下一次阶段切换
+  try {
+    const snapshot = await invoke<StatusPayload | null>("get_status");
+    if (snapshot && typeof snapshot.phase === "string") {
+      renderStatus(snapshot);
+    }
+  } catch (e) {
+    console.error("get_status failed:", e);
   }
   window.setInterval(interpolateTick, 500);
 
