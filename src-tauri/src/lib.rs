@@ -52,9 +52,16 @@ fn get_current_break(ctx: tauri::State<AppCtx>) -> Option<BreakInfo> {
 }
 
 #[tauri::command]
-fn get_settings(ctx: tauri::State<AppCtx>) -> serde_json::Value {
+fn get_settings(app: tauri::AppHandle, ctx: tauri::State<AppCtx>) -> serde_json::Value {
+    // launchOnStartup 是运行时注入的系统实际状态（注册表/launchd），
+    // 不落盘 settings.json——用户可能在系统设置/任务管理器里改过，落盘副本会漂移
+    let launch_on_startup = autostart_enabled(&app);
     let guard = ctx.store.lock().unwrap();
-    serde_json::to_value(&guard.settings).unwrap()
+    let mut v = serde_json::to_value(&guard.settings).unwrap();
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("launchOnStartup".into(), serde_json::Value::Bool(launch_on_startup));
+    }
+    v
 }
 
 /// planner 当前状态快照：设置页打开时立即渲染状态条（等待期无广播，等第一个事件要几分钟）
@@ -66,9 +73,14 @@ fn get_status(ctx: tauri::State<AppCtx>) -> serde_json::Value {
 #[tauri::command]
 fn update_settings(
     app: tauri::AppHandle,
-    patch: serde_json::Value,
+    mut patch: serde_json::Value,
     ctx: tauri::State<AppCtx>,
 ) -> Result<(), String> {
+    // launchOnStartup 不落盘：从 patch 摘出，单独走 autostart 插件（系统级注册项才是事实源）
+    let launch_want = match &mut patch {
+        serde_json::Value::Object(m) => m.remove("launchOnStartup").and_then(|v| v.as_bool()),
+        _ => None,
+    };
     // 前后值（锁各自短作用域：rebuild 内部会再锁 store，std Mutex 不可重入）
     let (skin_before, pet_before) = {
         let g = ctx.store.lock().unwrap();
@@ -97,6 +109,19 @@ fn update_settings(
         apply_pet_enabled(&app, pet_after);
     }
 
+    // 开机自启（系统级开关，独立于 settings.json）：写注册表/launchd +
+    // 广播同步设置页开关 + 重建托盘刷新勾选态
+    if let Some(want) = launch_want {
+        match apply_autostart(&app, want) {
+            Ok(actual) => {
+                use tauri::Emitter;
+                let _ = app.emit("launch-on-startup-changed", actual);
+                crate::tray::rebuild(&app);
+            }
+            Err(e) => return Err(format!("开机自启动设置失败：{e}")),
+        }
+    }
+
     let _ = ctx.tx.send(Cmd::SettingsChanged);
     Ok(())
 }
@@ -115,6 +140,33 @@ pub fn apply_pet_enabled(app: &tauri::AppHandle, enabled: bool) {
     }
     let _ = app.emit("pet-visibility-changed", enabled);
     crate::tray::rebuild(app);
+}
+
+/// 读当前自启动实际状态（Windows：HKCU Run 注册表项；macOS：LaunchAgent）。
+/// 读取失败按 false 兜底（设置页/托盘渲染，不致命）。
+pub fn autostart_enabled(app: &tauri::AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// 应用开机自启开关，返回操作后的实际状态（以系统注册项回读为准，而非盲信调用结果）。
+/// 托盘勾选 / 设置页开关 / 首次默认开启都走这里，两条路行为一致。
+/// 成功后顺手落 `autostartInitialized` 标记：此后启动不再执行「默认开启」。
+pub fn apply_autostart(app: &tauri::AppHandle, enable: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    if enable {
+        mgr.enable().map_err(|e| e.to_string())?;
+    } else {
+        mgr.disable().map_err(|e| e.to_string())?;
+    }
+    let actual = mgr.is_enabled().map_err(|e| e.to_string())?;
+    if let Some(ctx) = app.try_state::<AppCtx>() {
+        let _ = ctx.store.lock().unwrap().update(
+            serde_json::json!({ "autostartInitialized": true }),
+        );
+    }
+    Ok(actual)
 }
 
 #[tauri::command]
@@ -166,6 +218,13 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
+        // 开机自启：Windows=注册表 Run 键，macOS=LaunchAgent（用户目录，无需 root），
+        // Linux=desktop 文件。只从 Rust 侧调用（update_settings / 托盘），前端不直连
+        // 插件命令，故 capabilities 无需新增权限。
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_settings,
             get_status,
@@ -234,6 +293,15 @@ pub fn run() {
             }
 
             tray::build(app.handle(), tx.clone());
+
+            // 开机自启默认开启：仅首次启动执行一次（成功后落 autostartInitialized
+            // 标记）。此后用户关掉——无论在应用内还是任务管理器/系统设置——
+            // 都不会被默认值重新打开；写入失败不落标记，下次启动重试。
+            if !s.autostart_initialized {
+                if let Err(e) = apply_autostart(app.handle(), true) {
+                    eprintln!("perchly: 默认开启自启动失败（下次启动重试）: {e}");
+                }
+            }
 
             Ok(())
         })

@@ -7,7 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-/** 后端设置 JSON（camelCase，键名与 settings.rs 一致；petPosX/petPosY 不在 UI 暴露） */
+/** 后端设置 JSON（camelCase，键名与 settings.rs 一致；petPosX/petPosY 不在 UI 暴露；
+ * launchOnStartup 为运行时注入的系统自启动实际状态，不落盘 settings.json） */
 interface Settings {
   microbreak: boolean;
   microbreakDuration: number;
@@ -34,6 +35,9 @@ interface Settings {
   allScreens: boolean;
   petEnabled: boolean;
   petSkin: string;
+  launchOnStartup: boolean;
+  /** 「默认开启自启动」一次性标记（仅后端使用，UI 不展示） */
+  autostartInitialized: boolean;
 }
 
 /** status 事件 payload（planner.rs status()） */
@@ -424,12 +428,17 @@ async function main(): Promise<void> {
   // 只改控件显示不回写保存（否则事件回声会再触发一轮 update_settings）
   const petEnabledEl = document.querySelector<HTMLInputElement>('[data-setting="petEnabled"]');
   const petSkinEl = document.querySelector<HTMLSelectElement>('[data-setting="petSkin"]');
+  const autostartEl = document.querySelector<HTMLInputElement>('[data-setting="launchOnStartup"]');
   try {
     await listen<boolean>("pet-visibility-changed", (ev) => {
       if (petEnabledEl && petEnabledEl.checked !== ev.payload) petEnabledEl.checked = ev.payload;
     });
     await listen<string>("pet-skin-changed", (ev) => {
       if (petSkinEl && petSkinEl.value !== ev.payload) petSkinEl.value = ev.payload;
+    });
+    // 开机自启：托盘勾选变化时同步本页开关（注册表实际状态为准）
+    await listen<boolean>("launch-on-startup-changed", (ev) => {
+      if (autostartEl && autostartEl.checked !== ev.payload) autostartEl.checked = ev.payload;
     });
   } catch (e) {
     console.error("listen pet events failed:", e);

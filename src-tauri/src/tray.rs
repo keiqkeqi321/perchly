@@ -51,6 +51,13 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
         &[&sk_svg, &sk_pack],
     ).unwrap();
 
+    // —— 开机自启（勾选态=系统注册项实际状态，非 settings.json；用户可能在
+    //    任务管理器/系统设置里改过，每次构建菜单时现读）——
+    let autostart = CheckMenuItem::with_id(
+        app, "autostart", "开机自启动",
+        true, crate::autostart_enabled(app), None::<&str>,
+    ).unwrap();
+
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>).unwrap();
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>).unwrap();
 
@@ -63,6 +70,7 @@ fn build_menu(app: &AppHandle, _tx: &std::sync::mpsc::Sender<Cmd>) -> Menu<tauri
             &PredefinedMenuItem::separator(app).unwrap(),
             &show_pet,
             &skin_menu,
+            &autostart,
             &PredefinedMenuItem::separator(app).unwrap(),
             &settings, &quit,
         ],
@@ -145,6 +153,18 @@ fn handle_menu(app: &AppHandle, tx: &std::sync::mpsc::Sender<Cmd>, id: &str) {
             }
             let _ = app.emit("pet-skin-changed", skin.as_str());
             rebuild(app);
+        }
+        "autostart" => {
+            // 与设置页开关同一逻辑：以系统注册项当前状态为基准翻转（外部改动也能
+            // 正确切回），写回后广播同步设置页 UI + 重建菜单刷新勾选
+            let next = !crate::autostart_enabled(app);
+            match crate::apply_autostart(app, next) {
+                Ok(actual) => {
+                    let _ = app.emit("launch-on-startup-changed", actual);
+                    rebuild(app);
+                }
+                Err(e) => eprintln!("perchly: 开机自启动切换失败: {e}"),
+            }
         }
         "settings" => {
             match app.get_webview_window("settings") {

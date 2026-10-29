@@ -85,6 +85,11 @@ pub struct Settings {
     pub pack_missing: bool,
     pub pet_pos_x: Option<i32>,
     pub pet_pos_y: Option<i32>,
+    /// 「开机自启默认开启」的一次性标记：false=尚未初始化（下次启动自动开启一次）；
+    /// true=已应用过或用户已显式切换过，此后不再自动改系统注册项。
+    /// 注意自启动实际状态不落盘（注册表/launchd 为准），此字段只防
+    /// 「用户关掉后又被默认值重新打开」。
+    pub autostart_initialized: bool,
 }
 
 impl Serialize for PetSkin {
@@ -134,6 +139,7 @@ impl Default for Settings {
             pack_missing: false,
             pet_pos_x: None,
             pet_pos_y: None,
+            autostart_initialized: false,
         }
     }
 }

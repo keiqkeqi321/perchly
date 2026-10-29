@@ -43,7 +43,7 @@
 ### 下一步（M2+）
 - [ ] 真机观感调优：SVG 鹦鹉透明窗口合成、DPI>1 多屏坐标
 - [ ] 桌宠事件联动实测（happy/remind 状态切换）
-- [ ] 开机自启（tauri-plugin-autostart）
+- [x] 开机自启（tauri-plugin-autostart 2.7：Win=注册表 Run 键 / macOS=LaunchAgent；默认开启仅首次执行一次，`autostartInitialized` 标记防「关掉又被打开」；实际状态以系统注册项为准不落盘，设置页开关与托盘勾选双向同步）
 - [ ] 声音提醒、静音时段
 - [ ] macOS 侧编译验证（需 mac 机器）
 - [ ] 安装包（NSIS）+ 代码签名

@@ -23,6 +23,21 @@
     </header>
 
     <main class="cards">
+      <!-- ============ 通用（系统级开关） ============ -->
+      <section class="card">
+        <h2>通用</h2>
+        <div class="row">
+          <label class="row-text" for="launchOnStartup">
+            <span class="row-title">开机自启动</span>
+            <span class="row-desc">登录系统时自动启动 Perchly（Windows 启动项 / macOS 登录项）</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="launchOnStartup" data-setting="launchOnStartup" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
       <!-- ============ 休息节奏（微休息 / 长休息 / 循环可视化） ============ -->
       <section class="card">
         <h2>休息节奏</h2>
