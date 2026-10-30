@@ -1,0 +1,77 @@
+name: Release
+
+# 推送 v* 版本 tag 触发打包，例如：
+#   git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64: 产出 NSIS setup.exe + MSI
+          - label: windows-x64
+            os: windows-latest
+            args: ''
+          # macOS: universal 二进制（同时支持 Intel 和 Apple Silicon），产出 .dmg
+          - label: macos-universal
+            os: macos-latest
+            args: '--target universal-apple-darwin'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS Rust targets (universal)
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Sync version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' 不是版本 tag（期望 vX.Y.Z）"
+            exit 1
+          fi
+          node -e 'const fs=require("fs");const p="src-tauri/tauri.conf.json";const c=JSON.parse(fs.readFileSync(p,"utf8"));c.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n");' "$VERSION"
+          echo "Bundled version: $VERSION"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Perchly ${{ github.ref_name }}'
+          releaseBody: '在下方 Assets 下载对应平台的安装包。'
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}
