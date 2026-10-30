@@ -5,7 +5,7 @@
 use crate::settings::{BreakKind, Settings};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-pub fn show(app: &AppHandle, kind: BreakKind, s: &Settings) {
+pub fn show(app: &AppHandle, kind: BreakKind, s: &Settings, can_postpone: bool) {
     hide(app); // 防重入
     let monitors = match app.available_monitors() {
         Ok(m) => m,
@@ -23,6 +23,7 @@ pub fn show(app: &AppHandle, kind: BreakKind, s: &Settings) {
             kind,
             duration_ms,
             started_at: std::time::SystemTime::now(),
+            can_postpone,
         });
     }
     let visible_list: Vec<_> = monitors.into_iter().collect();

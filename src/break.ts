@@ -15,14 +15,14 @@ interface CurrentBreak {
   kind: "micro" | "long";
   durationMs: number;
   startedAt: number;
+  /** 建窗时后端算好的推迟可用性（开启 && 次数未用尽 && limit>0） */
+  canPostpone: boolean;
 }
 
 /** 设置 JSON 里本页需要的子集 */
 interface BreakSettings {
   microbreakStrictMode: boolean;
-  microbreakPostpone: boolean;
   breakStrictMode: boolean;
-  breakPostpone: boolean;
 }
 
 /** "planner" 通道 payload：{ type, data } */
@@ -99,14 +99,41 @@ function selfHide(): void {
     .catch((e) => console.error("hide window failed:", e));
 }
 
-/** 跳过当前休息：planner 会发 finished 事件并关窗，这里不额外自隐藏 */
+/** 动作节流（400ms）：按钮按可用窗口显隐后，正常点击不会连发；节流只为挡住
+ *  按住 Esc 的键盘自动重复。不用「只发一次」的锁——前后端在 30% 边界的取整
+ *  口径可能差 1%，若后端恰好拒绝而前端已上锁，按钮就死了。 */
+const ACTION_THROTTLE_MS = 400;
+let skipSentAt = 0;
+let postponeSentAt = 0;
+
 function skipBreak(): void {
+  const now = Date.now();
+  if (now - skipSentAt < ACTION_THROTTLE_MS) return;
+  skipSentAt = now;
   invoke("skip_current").catch((e) => console.error("skip_current failed:", e));
 }
 
-/** 推迟当前休息：planner 侧 hide 遮罩并重排计划 */
+/** 推迟当前休息：planner 侧 hide 遮罩并重排计划（同一节流） */
 function postponeBreak(): void {
+  const now = Date.now();
+  if (now - postponeSentAt < ACTION_THROTTLE_MS) return;
+  postponeSentAt = now;
   invoke("postpone_break").catch((e) => console.error("postpone_break failed:", e));
+}
+
+/** Stretchly 语义（utils.js canSkip/canPostpone，postponableDurationPercent=30）：
+ *  - 推迟：仅前 30% 可用；
+ *  - 跳过：推迟可用时须过 30%，推迟不可用时全程可用。
+ *  按钮可用性随倒计时切换：不可用的按钮直接不显示——点了没反应的按钮
+ *  是"跳过按钮不灵敏"的根因（后端守卫静默 return，前端无任何反馈）。 */
+const POSTPONABLE_PERCENT = 30;
+
+/** 与后端 skip_current 守卫同口径（progress_percent 为向下取整整数）：
+ *  推迟可用时，已过进度 > 30% 才允许跳过；推迟不可用则全程可跳。 */
+function canSkipNow(brk: CurrentBreak): boolean {
+  if (!brk.canPostpone) return true;
+  const elapsedPct = Math.trunc(((Date.now() - brk.startedAt) / brk.durationMs) * 100);
+  return elapsedPct > POSTPONABLE_PERCENT;
 }
 
 /**
@@ -117,12 +144,24 @@ function startCountdown(brk: CurrentBreak): void {
   const endAt = brk.startedAt + brk.durationMs;
   let lastPaint = 0;
 
+  /** 按钮显隐刷新（对齐 Stretchly break-renderer.js 每秒切换 hidden）：
+   *  不可用的动作不显示——「跳过」前 30%（推迟可用时）静默无响应是本次修的 bug。 */
+  const updateActions = (remainMs: number): void => {
+    const elapsedPct = Math.trunc(((brk.durationMs - remainMs) / brk.durationMs) * 100);
+    els.postpone.hidden = !(brk.canPostpone && elapsedPct <= POSTPONABLE_PERCENT);
+    const skipOk = !brk.canPostpone || elapsedPct > POSTPONABLE_PERCENT;
+    els.skip.hidden = !skipOk;
+    els.kbdHint.hidden = !skipOk;
+  };
+
   const paint = (): boolean => {
     const remainMs = endAt - Date.now();
     els.countdown.textContent = formatClock(remainMs);
-    // 剩余比例 → dashoffset（剩余越多环越满，随时间消退）
+    // 圆环：剩余比例 → dashoffset（剩余越多环越满，随时间消退）
     const frac = Math.min(1, Math.max(0, remainMs / brk.durationMs));
     els.ringProgress.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - frac));
+    // 按钮可用窗口随倒计时切换（对齐 Stretchly break-renderer.js 的每秒显隐）
+    updateActions(remainMs);
     return remainMs > 0; // false = 结束，停止循环
   };
 
@@ -167,7 +206,6 @@ async function main(): Promise<void> {
 
   const kind = brk.kind;
   const strict = kind === "micro" ? settings.microbreakStrictMode : settings.breakStrictMode;
-  const canPostpone = kind === "micro" ? settings.microbreakPostpone : settings.breakPostpone;
 
   // 主题：long 暖橙 / micro teal（CSS 变量切换）
   els.body.classList.toggle("theme-long", kind === "long");
@@ -187,13 +225,16 @@ async function main(): Promise<void> {
     els.actions.remove();
     els.kbdHint.remove();
   } else {
-    // 推迟功能关闭时，不渲染「推迟」按钮（planner 侧也有守卫）
-    if (!canPostpone) els.postpone.remove();
+    // 交互可用性（对齐 Stretchly utils.js canSkip/canPostpone）：
+    //  - 推迟：canPostpone（后端已含次数上限）且前 30% 才显示；
+    //  - 跳过：推迟不可用时全程显示；推迟可用时 30% 后显示。
+    //  不可用的按钮不显示，杜绝「点了没反应」。初始态由 startCountdown 首帧绘制。
     els.postpone.addEventListener("click", postponeBreak);
     els.skip.addEventListener("click", skipBreak);
-    // Esc / Ctrl+C = 跳过
+    // Esc / Ctrl+C = 跳过（与按钮同一可用窗口；不可跳过时不吞按键）
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" || (ev.ctrlKey && ev.key.toLowerCase() === "c")) {
+        if (!canSkipNow(brk)) return;
         ev.preventDefault();
         skipBreak();
       }

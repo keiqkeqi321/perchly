@@ -171,7 +171,10 @@ impl Planner {
             }
             Phase::StartMicrobreak => {
                 let s = self.s();
-                overlay::show(&self.app, BreakKind::Micro, &s);
+                let can = s.microbreak_postpone
+                    && s.microbreak_postpones_limit > 0
+                    && self.postpones < s.microbreak_postpones_limit;
+                overlay::show(&self.app, BreakKind::Micro, &s, can);
                 self.deadline = Some(Deadline::after(
                     Phase::FinishMicrobreak,
                     Duration::from_millis(s.microbreak_duration),
@@ -180,7 +183,10 @@ impl Planner {
             }
             Phase::StartBreak => {
                 let s = self.s();
-                overlay::show(&self.app, BreakKind::Long, &s);
+                let can = s.break_postpone
+                    && s.break_postpones_limit > 0
+                    && self.postpones < s.break_postpones_limit;
+                overlay::show(&self.app, BreakKind::Long, &s, can);
                 self.deadline = Some(Deadline::after(
                     Phase::FinishBreak,
                     Duration::from_millis(s.break_duration),

@@ -28,6 +28,10 @@ pub struct BreakInfo {
     pub duration_ms: u64,
     #[serde(serialize_with = "epoch_ms")]
     pub started_at: std::time::SystemTime,
+    /// 本次休息推迟按钮是否可用（对齐 Stretchly main.js L823-830：
+    /// postpone 开启 && 次数未用尽 && limit>0，建窗时由 planner 传入已用次数）。
+    /// 遮罩据此决定「推迟」按钮显隐；用尽后立即显示「跳过」，避免点了没反应。
+    pub can_postpone: bool,
 }
 
 /// SystemTime → Unix epoch 毫秒（前端直接做减法算倒计时）
