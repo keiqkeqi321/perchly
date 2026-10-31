@@ -122,6 +122,7 @@ export class PetPackEngine {
     p.setHidden(true);
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) { p.destroy(); return; }
+    if (this.disposed) { p.destroy(); return; }
     p.pause();
     this.warmBg.set(file, p);
   }
@@ -249,12 +250,13 @@ export class PetPackEngine {
     window.clearTimeout(this.pendingReturnTimer);
     this.dragging = true;
     window.clearTimeout(this.idleTimer);
-    this.interactSeq++; // 作废挂起的"回待机"定时器
+    const mySeq = ++this.interactSeq; // 作废挂起的"回待机"定时器
     const rule = this.pack.triggerRules.find((r) => r.when === "drag");
     const file = this.pack.assets.fly[0];
-    await this.playBody(file, "fly"); // 预热池命中则零延迟
+    const ok = await this.playBody(file, "fly"); // 预热池命中则零延迟
+    if (!ok || this.disposed || !this.dragging || mySeq !== this.interactSeq) return;
     this.flyShownAt = Date.now();
-    this.applyRule(rule);
+    void this.applyRule(rule);
   }
 
   /** 拖动结束：停背景，回待机；fly 回收进预热池（下次拖动零延迟）。
@@ -262,6 +264,7 @@ export class PetPackEngine {
   dragEnd(): void {
     if (!this.dragging) return;
     this.dragging = false;
+    this.interactSeq++; // 松手后，等待加载的飞翔动作不再显示光晕
     this.stopBg();
     const elapsed = Date.now() - this.flyShownAt;
     const delay = Math.max(0, 600 - elapsed);
@@ -290,11 +293,12 @@ export class PetPackEngine {
   private async applyRule(rule: TriggerRule | undefined): Promise<void> {
     if (this.disposed) return;
     const req: BgRequest = { key: rule?.bg ?? null };
+    if (!req.key) { this.stopBg(); return; }
     if (this.lastBgKey === req.key) return; // 同背景连续触发不闪切
     this.lastBgKey = req.key;
-    if (!req.key) return;
+    const gen = ++this.bgGen;
     const file = this.pack.backgrounds[req.key];
-    if (!file) return;
+    if (!file) { this.stopBg(); return; }
     // 领养预热背景（首帧就绪，零延迟）
     const warm = this.warmBg.get(file);
     if (warm) {
@@ -306,15 +310,23 @@ export class PetPackEngine {
       return;
     }
     const p = new PetVideoPlayer(this.videoUrl(file));
+    p.setHidden(true);
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
-    if (!ok) return;
+    if (!ok || this.disposed || gen !== this.bgGen) {
+      p.destroy();
+      if (gen === this.bgGen) this.lastBgKey = null;
+      return;
+    }
+    p.setHidden(false);
     this.bgPlayer?.destroy();
     this.bgPlayer = p;
   }
 
   private lastBgKey: string | null = null;
+  private bgGen = 0;
 
   private stopBg(): void {
+    this.bgGen++; // 取消仍在加载的背景
     this.bgPlayer?.destroy();
     this.bgPlayer = null;
     this.lastBgKey = null;
@@ -324,6 +336,7 @@ export class PetPackEngine {
 
   dispose(): void {
     this.disposed = true;
+    this.bgGen++;
     window.clearTimeout(this.idleTimer);
     window.clearTimeout(this.pendingReturnTimer);
     this.bodyPlayer?.destroy();
