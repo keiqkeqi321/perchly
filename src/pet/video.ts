@@ -1,12 +1,11 @@
 /**
- * 桌宠视频动画播放器（WebM 直显模式）
+ * 桌宠视频动画播放器（Windows WebM / macOS HEVC Alpha）
  *
  * 资源特征：
- * - WebM(VP9) 无 Alpha，背景为纯色但每条不同（39灰~255白）
+ * - WebM(VP9) 和对应的 HEVC 视频均带 Alpha 透明通道
  * - 正方形，~4s/动作循环，多分辨率档（640/960/1080/1440）
  *
- * 呈现策略：视频本体 + CSS 圆角（贴纸卡观感）。
- * 不做色距抠像——深灰背景视频的眼珠与背景色距过近，抠像必掉眼睛（实证见 DEVLOG）。
+ * 呈现策略：直接播放视频，通过 Alpha 通道合成透明背景。
  */
 
 /** 等首帧上屏的兜底超时：内存吃紧时解码器可能长时间不给帧，
@@ -16,7 +15,7 @@ const FIRST_FRAME_TIMEOUT_MS = 2000;
 export class PetVideoPlayer {
   private video: HTMLVideoElement;
 
-  /** @param src WebM URL */
+  /** @param src 视频 URL */
   constructor(src: string) {
     this.video = document.createElement("video");
     Object.assign(this.video, {

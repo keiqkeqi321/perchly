@@ -4,6 +4,7 @@
  * 宠物包结构（public/assets/pets/<packId>/）：
  *   manifest.json —— 声明式资源与触发规则（见下方 PetPack 接口）
  *   *.webm        —— 动画资源，文件名即语义
+ *   *.mov         —— 可选的 macOS HEVC Alpha 版本
  *
  * 设计目标：加新宠物 = 加一个文件夹 + manifest.json，引擎代码零改动。
  * 规则模式（triggerRules.when，先匹配先赢）：
@@ -33,6 +34,7 @@ export interface PetPack {
     fly: string[];
   };
   backgrounds: Record<string, string>;
+  macOSVideos?: Record<string, string>;
   triggerRules: TriggerRule[];
 }
 
@@ -69,6 +71,12 @@ export class PetPackEngine {
     root.appendChild(this.bodyStage);
   }
 
+  /** macOS 的 WebKit 无法正确合成 VP9 Alpha，优先使用资源包提供的 HEVC Alpha。 */
+  private videoUrl(file: string): string {
+    const isMac = /Macintosh|Mac OS X/.test(navigator.userAgent);
+    return this.base + (isMac ? this.pack.macOSVideos?.[file] ?? file : file);
+  }
+
   /** 启动：进入待机轮播 + 预热关键资源（fly/背景，首帧就绪待命） */
   async start(): Promise<boolean> {
     if (!this.pack.assets.idle.length) return false;
@@ -97,7 +105,7 @@ export class PetPackEngine {
   private async prewarmBody(file: string): Promise<void> {
     if (this.warmBody.has(file)) return;
     this.warmBody.set(file, "loading");
-    const p = new PetVideoPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.videoUrl(file));
     p.setHidden(true);
     const ok = await p.attach(this.bodyStage, { waitForFrame: true });
     if (!ok) { p.destroy(); this.warmBody.delete(file); return; }
@@ -110,7 +118,7 @@ export class PetPackEngine {
   /** 预热一个背景视频（隐藏挂载到 bgStage） */
   private async prewarmBg(file: string): Promise<void> {
     if (this.warmBg.has(file)) return;
-    const p = new PetVideoPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.videoUrl(file));
     p.setHidden(true);
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) { p.destroy(); return; }
@@ -143,7 +151,7 @@ export class PetPackEngine {
         return true;
       }
 
-      const p = new PetVideoPlayer(this.base + file);
+      const p = new PetVideoPlayer(this.videoUrl(file));
       p.setHidden(true); // 加载期间隐藏（视频绝对定位堆叠，隐藏片不推挤布局）
       const ok = await p.attach(this.bodyStage, { waitForFrame: true });
       if (!ok) {
@@ -297,7 +305,7 @@ export class PetPackEngine {
       this.bgPlayer = warm;
       return;
     }
-    const p = new PetVideoPlayer(this.base + file);
+    const p = new PetVideoPlayer(this.videoUrl(file));
     const ok = await p.attach(this.bgStage, { waitForFrame: true });
     if (!ok) return;
     this.bgPlayer?.destroy();
